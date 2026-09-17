@@ -32,7 +32,7 @@ installer so it can be rebuilt on any machine.
 ## Install
 
 ```sh
-git clone <this repo> ~/workspace/agent-worktrunk
+git clone git@github.com:a6wright/agent-worktrunk.git ~/workspace/agent-worktrunk
 cd ~/workspace/agent-worktrunk
 ./install.sh --dry-run   # see what it would do
 ./install.sh
