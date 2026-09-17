@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# Review the current branch in Zed: everything changed since it forked from the
+# default branch, committed or not, in one multi-file diff view.
+#
+# Usage: wt-review [base]
+#
+#   base   ref to compare against (default: the repo's default branch)
+#
+# Zed's CLI cannot trigger its in-app branch diff, but `zed --diff OLD NEW` can
+# be repeated to build one multi-diff. The OLD side is a snapshot of each file
+# at the merge base; the NEW side is the live file in the worktree, so edits
+# made while reviewing land where they should.
+set -euo pipefail
+
+die() {
+    echo "wt-review: $*" >&2
+    exit 1
+}
+
+case ${1:-} in
+    -h | --help)
+        sed -n '2,/^set -euo/{/^set -euo/d;s/^# \{0,1\}//;p}' "$0"
+        exit 0
+        ;;
+esac
+
+command -v zed >/dev/null || die "zed not found on PATH"
+root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not inside a git repository"
+cd "$root"
+
+# --- what to compare against --------------------------------------------------
+default_branch() {
+    local b=""
+    if command -v wt >/dev/null && command -v jq >/dev/null; then
+        b=$(wt list --format json 2>/dev/null | jq -r '.repo.default_branch // empty' 2>/dev/null || true)
+    fi
+    if [[ -z $b ]]; then
+        b=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
+        b=${b#origin/}
+    fi
+    echo "${b:-main}"
+}
+
+base_ref=${1:-$(default_branch)}
+if ! git rev-parse --verify --quiet "$base_ref^{commit}" >/dev/null; then
+    if git rev-parse --verify --quiet "origin/$base_ref^{commit}" >/dev/null; then
+        base_ref="origin/$base_ref"
+    else
+        die "cannot find base '$base_ref'"
+    fi
+fi
+base=$(git merge-base HEAD "$base_ref") || die "no common ancestor with '$base_ref'"
+
+# --- snapshot directory -------------------------------------------------------
+# Zed returns immediately and keeps reading the OLD files, so they cannot be
+# deleted on exit. One directory per worktree, rebuilt on every run, keeps the
+# leftovers bounded.
+cache=${XDG_CACHE_HOME:-$HOME/.cache}/wt-review
+key=$(printf '%s' "$root" | git hash-object --stdin | cut -c1-12)
+snap=$cache/$key
+[[ $snap == */wt-review/* ]] || die "refusing to clear unexpected path: $snap"
+rm -rf "$snap"
+mkdir -p "$snap/base" "$snap/deleted"
+
+# --- collect changes ----------------------------------------------------------
+# Binary files show up in --numstat as "-<TAB>-". Kept as a list file rather than
+# an associative array because macOS still ships bash 3.2.
+git -c core.quotepath=off diff --numstat --no-renames "$base" |
+    awk -F'\t' '$1 == "-" && $2 == "-" { print $3 }' >"$snap/binary.list"
+
+args=()
+count=0
+skipped=0
+
+add_pair() { # status path
+    local status=$1 path=$2 old="$snap/base/$2" new="$root/$2"
+    if grep -Fxq -- "$path" "$snap/binary.list"; then
+        skipped=$((skipped + 1))
+        return
+    fi
+    mkdir -p "$(dirname "$old")"
+    case $status in
+        A) : >"$old" ;;
+        D)
+            git show "$base:$path" >"$old"
+            new="$snap/deleted/$path"
+            mkdir -p "$(dirname "$new")"
+            : >"$new"
+            ;;
+        *) git show "$base:$path" >"$old" ;;
+    esac
+    args+=(--diff "$old" "$new")
+    count=$((count + 1))
+}
+
+# Tracked changes: working tree against the merge base, so commits on the branch
+# plus staged and unstaged edits all show up.
+while IFS= read -r -d '' status && IFS= read -r -d '' path; do
+    add_pair "${status:0:1}" "$path"
+done < <(git diff --name-status --no-renames -z "$base")
+
+# New files that have not been `git add`ed yet are part of the story too.
+while IFS= read -r -d '' path; do
+    add_pair A "$path"
+done < <(git ls-files --others --exclude-standard -z)
+
+if ((count == 0)); then
+    echo "wt-review: no changes against $base_ref"
+    exit 0
+fi
+
+msg="wt-review: $count file(s) changed against $base_ref (${base:0:7})"
+((skipped > 0)) && msg+=", $skipped binary skipped"
+echo "$msg"
+
+exec zed "${args[@]}"

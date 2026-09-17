@@ -1,0 +1,24 @@
+// Partial config: zellij merges this over its defaults, so only overrides live here.
+// See `zellij setup --dump-config` for everything that can be set.
+
+// New sessions start with a single "control" tab (layouts/control.kdl).
+default_layout "control"
+
+// Sessions are saved to disk so `zellij attach -c main` can resurrect them after a reboot.
+// This is zellij's default; stated so the workflow does not silently depend on it.
+session_serialization true
+
+show_startup_tips false
+show_release_notes false
+
+keybinds {
+    shared_except "locked" {
+        // lazygit in a floating pane, opened in the focused pane's directory.
+        bind "Alt g" {
+            Run "lazygit" {
+                floating true
+                close_on_exit true
+            }
+        }
+    }
+}

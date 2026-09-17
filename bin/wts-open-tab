@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Open (or jump to) the zellij tab for a worktree.
+#
+# Usage: wts-open-tab <branch> <worktree-path>
+#
+# Called by `wts` through `wt switch -x`, which fills in the resolved branch and
+# path. Doing the tab lookup here rather than in `wts` means shortcuts like
+# `wts -` or `wts pr:12` reuse an existing tab too, since the lookup sees the
+# real branch name instead of what was typed.
+set -euo pipefail
+
+branch=${1:?usage: wts-open-tab <branch> <worktree-path>}
+worktree=${2:?usage: wts-open-tab <branch> <worktree-path>}
+worktree=${worktree%/}
+
+if [[ -z ${ZELLIJ:-} ]]; then
+    echo "wts-open-tab: not inside a zellij session" >&2
+    exit 1
+fi
+
+# A bare layout name is resolved to a file here rather than left to zellij, whose
+# lookup depends on how the session was started. WTS_LAYOUT may be a name or a path.
+layout=${WTS_LAYOUT:-worktree}
+if [[ $layout != */* ]]; then
+    layout_file=${ZELLIJ_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/zellij}/layouts/$layout.kdl
+    [[ -f $layout_file ]] && layout=$layout_file
+fi
+
+# Tabs are named after the branch, and two repos can share a branch name. A tab
+# only counts as "ours" if one of its panes sits inside this worktree; otherwise
+# `wts main` in one repo would silently land in another repo's tab.
+tab_owns_worktree() {
+    zellij action list-panes --tab --command --json |
+        jq -e --arg tab "$1" --arg wt "$worktree" '
+            any(.[];
+                (.is_plugin | not)
+                and .tab_name == $tab
+                and (.pane_cwd // "" | . == $wt or startswith($wt + "/")))
+        ' >/dev/null
+}
+
+tab_exists() {
+    zellij action query-tab-names | grep -Fxq -- "$1"
+}
+
+# Preferred name is the bare branch; "<repo>:<branch>" is the fallback when that
+# name is taken by a different repo.
+repo=$(basename "$(dirname "$(git -C "$worktree" rev-parse --path-format=absolute --git-common-dir)")")
+candidates=("$branch" "$repo:$branch")
+
+for name in "${candidates[@]}"; do
+    if tab_exists "$name" && tab_owns_worktree "$name"; then
+        zellij action go-to-tab-name "$name"
+        exit 0
+    fi
+done
+
+for name in "${candidates[@]}"; do
+    if ! tab_exists "$name"; then
+        zellij action new-tab --layout "$layout" --name "$name" --cwd "$worktree" >/dev/null
+        exit 0
+    fi
+done
+
+echo "wts-open-tab: tabs named '$branch' and '$repo:$branch' both exist but neither is in $worktree" >&2
+exit 1
