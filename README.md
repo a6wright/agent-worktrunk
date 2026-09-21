@@ -58,6 +58,11 @@ Everything it does is recorded in `~/.local/state/agent-worktrunk/manifest`.
 
 > The macOS path has not been run on a Mac yet. It shares all its logic with the Linux path
 > except the `brew install` lines; use `--dry-run` first the first time.
+>
+> On a Mac, `Alt g` needs the terminal to send Option as Alt: in Ghostty set
+> `macos-option-as-alt = true`, in Terminal.app enable "Use Option as Meta key" in the
+> profile's Keyboard tab, in iTerm2 set the Option key to "Esc+" under Keys. Otherwise
+> Option-g types "©".
 
 ## Uninstall
 

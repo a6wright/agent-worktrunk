@@ -22,7 +22,7 @@ for arg in "$@"; do
         --dry-run) DRY_RUN=1 ;;
         --tools) SHOW_TOOLS=1 ;;
         -h | --help)
-            sed -n '2,/^set -euo/{/^set -euo/d;s/^# \{0,1\}//;p}' "$0"
+            sed -n '2,/^set -euo/{/^set -euo/d;s/^# \{0,1\}//;p;}' "$0"
             exit 0
             ;;
         *) die "unknown option: $arg (try --help)" ;;
