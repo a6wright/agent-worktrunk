@@ -1,2 +1,5 @@
 # zellij writes these beside config.kdl when settings are changed from its UI
 *.bak
+
+# macOS Finder metadata
+.DS_Store
