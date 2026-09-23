@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Review the current branch in tuicr: its commits since it forked from the
+# default branch plus uncommitted work, the same changes `review` shows in Zed.
+#
+# Usage: wt-tuicr [base]
+#
+#   base   ref to compare against (default: the repo's default branch)
+#
+# Bound to Alt r. Comments are saved as they are written, so closing the pane
+# loses nothing, and a coding agent can read them with `tuicr review comments`
+# (the tuicr skill does this). y copies them all as markdown instead.
+# On the default branch itself, or with nothing committed yet, it reviews only
+# the uncommitted changes.
+set -euo pipefail
+
+die() {
+    echo "wt-tuicr: $*" >&2
+    exit 1
+}
+
+case ${1:-} in
+    -h | --help)
+        sed -n '2,/^set -euo/{/^set -euo/d;s/^# \{0,1\}//;p;}' "$0"
+        exit 0
+        ;;
+esac
+
+command -v tuicr >/dev/null || die "tuicr not found on PATH"
+root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not inside a git repository"
+cd "$root"
+
+# Same lookup as wt-review.
+default_branch() {
+    local b=""
+    if command -v wt >/dev/null && command -v jq >/dev/null; then
+        b=$(wt list --format json 2>/dev/null | jq -r '.repo.default_branch // empty' 2>/dev/null || true)
+    fi
+    if [[ -z $b ]]; then
+        b=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
+        b=${b#origin/}
+    fi
+    echo "${b:-main}"
+}
+
+base_ref=${1:-$(default_branch)}
+if ! git rev-parse --verify --quiet "$base_ref^{commit}" >/dev/null; then
+    if git rev-parse --verify --quiet "origin/$base_ref^{commit}" >/dev/null; then
+        base_ref="origin/$base_ref"
+    else
+        base_ref=""
+    fi
+fi
+
+scope=(-w)
+if [[ -n $base_ref ]] && base=$(git merge-base HEAD "$base_ref" 2>/dev/null) &&
+    [[ $base != $(git rev-parse HEAD) ]]; then
+    scope=(-r "$base..HEAD" -w)
+fi
+
+# Updates come from the package manager, not tuicr's own updater.
+exec tuicr --no-update-check "${scope[@]}"

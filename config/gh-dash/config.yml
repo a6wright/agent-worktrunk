@@ -1,0 +1,20 @@
+# gh-dash settings (https://gh-dash.dev). ~/.config/gh-dash links here.
+prSections:
+  - title: My Pull Requests
+    filters: is:open author:@me
+  - title: Needs My Review
+    filters: is:open review-requested:@me
+  - title: Involved
+    filters: is:open involves:@me -author:@me
+
+keybindings:
+  universal:
+    # Esc closes gh-dash, and with it the Alt d pane.
+    - key: esc
+      builtin: quit
+  prs:
+    # Review the selected PR in tuicr, line comments and all; :submit posts the
+    # review to GitHub. No local checkout needed.
+    - key: T
+      name: review in tuicr
+      command: tuicr --no-update-check pr {{.RepoName}}#{{.PrNumber}}

@@ -76,6 +76,7 @@ run() {
 #   tool    <name>              a program we installed (not merely found)
 #   zshrc   <file>              a file we appended the block to
 #   ghostty <file>              a Ghostty config we appended the block to
+#   skill   <dir>               a Claude Code skill we put in place
 
 manifest_has() { # kind value
     [[ -f $MANIFEST ]] && grep -Fxq -- "$1"$'\t'"$2" "$MANIFEST"

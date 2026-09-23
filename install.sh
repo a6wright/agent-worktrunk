@@ -67,22 +67,35 @@ install_tools_macos() {
     have glow || try glow brew install glow
     have moor || try moor brew install moor
     have termaid || try termaid brew install termaid
+    have gh || try gh brew install gh
+    have tuicr || try tuicr brew install tuicr
     have zed || try zed brew install --cask zed
     [[ -d /Applications/Ghostty.app ]] || have ghostty || try ghostty brew install --cask ghostty
 }
 
-# from_github <owner/repo> <binary>: the latest Linux release tarball of a Go
-# tool, its binary put in ~/.local/bin wherever the archive keeps it.
-from_github() {
-    local repo=$1 bin=$2 arch url tmp
+# Release asset architecture names: Go tools say arm64, Rust tools aarch64.
+goarch() {
     case $(uname -m) in
-        x86_64) arch=x86_64 ;;
-        aarch64 | arm64) arch=arm64 ;;
+        x86_64) echo x86_64 ;;
+        aarch64 | arm64) echo arm64 ;;
         *) return 1 ;;
     esac
+}
+rustarch() {
+    case $(uname -m) in
+        x86_64) echo x86_64 ;;
+        aarch64 | arm64) echo aarch64 ;;
+        *) return 1 ;;
+    esac
+}
+
+# from_github <owner/repo> <binary> <asset-regex>: the latest release tarball
+# whose name matches, its binary put in ~/.local/bin wherever the archive keeps it.
+from_github() {
+    local repo=$1 bin=$2 pattern=$3 url tmp
     url=$(curl -fsSL "https://api.github.com/repos/$repo/releases/latest" |
-        jq -r --arg a "$arch" '.assets[].browser_download_url
-            | select(test("_linux_" + $a + "\\.tar\\.gz$"; "i"))' | head -n1)
+        jq -r --arg p "$pattern" '.assets[].browser_download_url | select(test($p; "i"))' |
+        head -n1)
     [[ -n $url ]] || return 1
     tmp=$(mktemp -d)
     curl -fsSL "$url" | tar -xz -C "$tmp" || { rm -rf "$tmp"; return 1; }
@@ -131,7 +144,7 @@ binstall() {
 install_tools_linux() {
     local apt_pkgs=() p
     if have apt-get; then
-        for p in git zsh jq curl fzf; do have "$p" || apt_pkgs+=("$p"); done
+        for p in git zsh jq curl fzf gh; do have "$p" || apt_pkgs+=("$p"); done
         if ! have lazygit && apt-cache show lazygit >/dev/null 2>&1; then
             apt_pkgs+=(lazygit)
         fi
@@ -139,7 +152,7 @@ install_tools_linux() {
             try "${apt_pkgs[*]}" sudo apt-get install -y "${apt_pkgs[@]}"
         fi
     else
-        for p in git zsh jq curl fzf; do
+        for p in git zsh jq curl fzf gh; do
             have "$p" || warn "$p is missing; install it with your package manager"
         done
     fi
@@ -151,13 +164,14 @@ install_tools_linux() {
     # Not packaged on older Ubuntu/Debian; fall back to the upstream release.
     # Skipped when apt is about to provide it (matters only under --dry-run).
     if ! have lazygit && [[ " ${apt_pkgs[*]-} " != *" lazygit "* ]]; then
-        try lazygit from_github jesseduffield/lazygit lazygit
+        try lazygit from_github jesseduffield/lazygit lazygit "_linux_$(goarch)\\.tar\\.gz$"
     fi
 
     mkdir -p "$BIN_DIR"
     have zellij || try zellij binstall zellij
     have wt || try worktrunk binstall worktrunk
-    have glow || try glow from_github charmbracelet/glow glow
+    have glow || try glow from_github charmbracelet/glow glow "_linux_$(goarch)\\.tar\\.gz$"
+    have tuicr || try tuicr from_github agavra/tuicr tuicr "-$(rustarch)-unknown-linux-musl\\.tar\\.gz$"
     if ! have moor; then
         if [[ $(uname -m) == x86_64 ]]; then
             try moor moor_from_github
@@ -168,6 +182,17 @@ install_tools_linux() {
     have termaid || try termaid pytool termaid
     have zed || try zed sh -c 'curl -fsSL https://zed.dev/install.sh | sh'
     have ghostty || note "Ghostty not found. Any terminal works; see https://ghostty.org/docs/install/binary"
+}
+
+# gh-dash is a gh extension, and installing one needs a logged-in gh.
+install_gh_dash() {
+    have gh || return 0
+    gh extension list 2>/dev/null | grep -q 'gh-dash' && return 0
+    if ! gh auth status >/dev/null 2>&1; then
+        note "gh-dash (Alt d) needs gh logged in: run 'gh auth login', then ./install.sh again"
+        return 0
+    fi
+    try gh-dash gh extension install dlvhdr/gh-dash
 }
 
 # --- links ----------------------------------------------------------------------
@@ -259,6 +284,50 @@ install_ghostty_block() {
 }
 GHOSTTY_CHANGED=0
 
+# --- claude code -------------------------------------------------------------------
+
+# tuicr's own Claude Code skill, from the release matching the installed tuicr:
+# with it Claude opens a review pane beside the chat and reads the comments
+# back. Refreshed when tuicr is upgraded; a skill of the same name that we did
+# not put there is left alone.
+install_tuicr_skill() {
+    local dest=$HOME/.claude/skills/tuicr version tmp src
+    [[ -d $HOME/.claude ]] || return 0
+    if ! have tuicr; then
+        ((DRY_RUN)) || note "tuicr is missing, so its Claude Code skill was skipped"
+        return 0
+    fi
+    version=$(tuicr --version | awk '{ print $2 }')
+    if [[ -e $dest ]] && ! manifest_has skill "$dest"; then
+        warn "$(tilde "$dest") exists and is not ours; left alone"
+        SKIPPED+=("$(tilde "$dest")")
+        return
+    fi
+    if [[ -f $dest/.tuicr-version && $(cat "$dest/.tuicr-version") == "$version" ]]; then
+        ok "tuicr $version skill for Claude Code"
+        return
+    fi
+    step "installing the tuicr $version skill for Claude Code in $(tilde "$dest")"
+    if ((DRY_RUN)); then
+        would "fetch skills/tuicr from agavra/tuicr v$version"
+        return
+    fi
+    tmp=$(mktemp -d)
+    if curl -fsSL "https://codeload.github.com/agavra/tuicr/tar.gz/refs/tags/v$version" |
+        tar -xz -C "$tmp" &&
+        src=$(find "$tmp" -type d -path '*/skills/tuicr' | head -n1) && [[ -f $src/SKILL.md ]]; then
+        rm -rf "$dest"
+        mkdir -p "$(dirname "$dest")"
+        mv "$src" "$dest"
+        echo "$version" >"$dest/.tuicr-version"
+        manifest_add skill "$dest"
+    else
+        FAILED+=("tuicr-skill")
+        warn "could not fetch the tuicr skill for v$version"
+    fi
+    rm -rf "$tmp"
+}
+
 # --- main -------------------------------------------------------------------------
 
 ((DRY_RUN)) && note "dry run: nothing will be changed"
@@ -271,7 +340,8 @@ if ((INSTALL_TOOLS)); then
         Linux) install_tools_linux ;;
         *) die "unsupported OS: $OS" ;;
     esac
-    for t in git zsh jq zellij wt lazygit fzf glow moor termaid zed; do
+    install_gh_dash
+    for t in git zsh jq zellij wt lazygit fzf glow moor termaid gh tuicr zed; do
         if have "$t"; then
             ok "$t"
         elif ! ((DRY_RUN)); then
@@ -284,6 +354,8 @@ fi
 
 headline "Config"
 link "$REPO/config/zellij" "$CONFIG_HOME/zellij" backup
+link "$REPO/config/tuicr" "$CONFIG_HOME/tuicr" backup
+link "$REPO/config/gh-dash" "$CONFIG_HOME/gh-dash" backup
 # A stable path for ~/.zshrc to source, so it never mentions where the repo is.
 link "$REPO/shell/workflow.zsh" "$WORKFLOW_LINK" backup
 
@@ -292,6 +364,9 @@ for f in "$REPO"/bin/*; do
     [[ -f $f && -x $f ]] || continue
     link "$f" "$BIN_DIR/$(basename "$f")" skip
 done
+
+headline "Claude Code"
+install_tuicr_skill
 
 headline "Shell"
 install_zshrc_block
@@ -318,6 +393,8 @@ else
     wts remove     remove a worktree and close its tab
     Alt g          lazygit in a floating pane (one per tab; Esc closes it)
     Alt m          the repo's markdown, rendered, Mermaid included (Esc closes it)
+    Alt r          review the branch in tuicr; comments reach Claude via /tuicr
+    Alt d          GitHub PRs in gh-dash (T reviews one in tuicr)
     review         branch diff in Zed
   Undo with ./uninstall.sh
 EOF

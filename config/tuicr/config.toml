@@ -1,0 +1,6 @@
+# tuicr settings (https://github.com/agavra/tuicr/blob/main/docs/CONFIG.md).
+# ~/.config/tuicr links here.
+
+# Bare q quits, like lazygit and the markdown reader. :q and ZZ still work.
+# Comments are saved as they are written, so nothing is lost either way.
+q_quits = true

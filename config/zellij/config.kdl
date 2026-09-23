@@ -29,5 +29,20 @@ keybinds {
                 close_on_exit true
             }
         }
+        // Review the branch in tuicr: comment on lines, then y copies the review
+        // as markdown, or a coding agent reads it with `tuicr review comments`.
+        bind "Alt r" {
+            Run "wt-float" "wt-tuicr" {
+                floating true
+                close_on_exit true
+            }
+        }
+        // GitHub pull requests in gh-dash; T on a PR reviews it in tuicr.
+        bind "Alt d" {
+            Run "wt-float" "gh" "dash" {
+                floating true
+                close_on_exit true
+            }
+        }
     }
 }

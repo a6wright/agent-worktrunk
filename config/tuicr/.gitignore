@@ -1,0 +1,4 @@
+# Only the config is ours; anything tuicr writes here stays out of git.
+*
+!.gitignore
+!config.toml

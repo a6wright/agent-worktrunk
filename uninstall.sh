@@ -103,6 +103,8 @@ fi
 # Everything install.sh links, whether or not the manifest survived.
 known_links() {
     echo "$CONFIG_HOME/zellij"
+    echo "$CONFIG_HOME/tuicr"
+    echo "$CONFIG_HOME/gh-dash"
     echo "$WORKFLOW_LINK"
     local f
     for f in "$REPO"/bin/*; do
@@ -175,6 +177,13 @@ if [[ -d $cache && $cache == */wt-review ]]; then
     run rm -rf "$cache"
 fi
 
+# The tuicr skill, only where the manifest says we put it there.
+while IFS= read -r skill; do
+    [[ -n $skill && -f $skill/.tuicr-version ]] || continue
+    step "removing $(tilde "$skill")"
+    run rm -rf "$skill"
+done < <(manifest_list skill)
+
 tools=$(manifest_list tool)
 
 if [[ -d $STATE_DIR ]]; then
@@ -197,6 +206,7 @@ if ((SHOW_TOOLS)); then
         echo
         for t in $tools; do
             case $(uname -s):$t in
+                *:gh-dash) echo "    gh extension remove gh-dash" ;;
                 Darwin:zed | Darwin:ghostty) echo "    brew uninstall --cask $t" ;;
                 Darwin:*) echo "    brew uninstall $t" ;;
                 Linux:zellij) echo "    rm $(tilde "$BIN_DIR")/zellij" ;;
@@ -209,7 +219,7 @@ if ((SHOW_TOOLS)); then
                     fi
                     ;;
                 Linux:zed) echo "    zed --uninstall" ;;
-                Linux:glow | Linux:moor) echo "    rm $(tilde "$BIN_DIR")/$t" ;;
+                Linux:glow | Linux:moor | Linux:tuicr) echo "    rm $(tilde "$BIN_DIR")/$t" ;;
                 Linux:termaid) echo "    uv tool uninstall termaid   # or: pipx uninstall termaid" ;;
                 Linux:*) echo "    sudo apt-get remove $t" ;;
             esac
