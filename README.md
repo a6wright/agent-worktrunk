@@ -81,6 +81,21 @@ Everything it does is recorded in `~/.local/state/agent-worktrunk/manifest`.
 > hand: in Terminal.app enable "Use Option as Meta key" in the profile's Keyboard tab,
 > in iTerm2 set the Option key to "Esc+" under Keys.
 
+## Updating
+
+```sh
+cd ~/workspace/agent-worktrunk && git pull && ./install.sh
+```
+
+Configs and scripts are links into this clone, so `git pull` alone updates everything that
+already exists. `./install.sh` catches what a pull cannot: new tools to install and new
+scripts in `bin/` to link. It changes nothing when there is nothing new, so run both every
+time.
+
+Scripts pick up changes the next time they run and zellij reloads its config itself
+(`zellij attach main` after a detach, if it does not). `workflow.zsh` loads when a shell
+starts, so open a new terminal or run `exec zsh`.
+
 ## Uninstall
 
 ```sh
