@@ -4,6 +4,10 @@ A terminal workflow built on [zellij](https://zellij.dev), [worktrunk](https://w
 [lazygit](https://github.com/jesseduffield/lazygit) and [Zed](https://zed.dev), with an
 installer so it can be rebuilt on any machine.
 
+![wts opens a worktree tab; Alt m reads a doc with its Mermaid diagram; Alt r reviews the change in tuicr and leaves a line comment; Alt g opens lazygit](docs/demo.gif)
+
+<sub>`wts feature/discounts` → `Alt m` (markdown, Mermaid drawn as text) → `Alt r` (review and comment) → `Alt g` (lazygit)</sub>
+
 ## What you get
 
 - **Every terminal lands in one zellij session**, `main`. It is created on first use, attached
@@ -58,7 +62,7 @@ installer so it can be rebuilt on any machine.
 ## Install
 
 ```sh
-git clone git@github.com:a6wright/agent-worktrunk.git ~/workspace/agent-worktrunk
+git clone https://github.com/a6wright/agent-worktrunk.git ~/workspace/agent-worktrunk
 cd ~/workspace/agent-worktrunk
 ./install.sh --dry-run   # see what it would do
 ./install.sh
@@ -88,8 +92,8 @@ The installer is safe to re-run; a second run changes nothing. It:
 
 Everything it does is recorded in `~/.local/state/agent-worktrunk/manifest`.
 
-> The macOS path has not been run on a Mac yet. It shares all its logic with the Linux path
-> except the `brew install` lines; use `--dry-run` first the first time.
+> The Linux installs of the newer tools (fzf, glow, moor, termaid, gh, tuicr) have only been
+> checked piece by piece, not run end to end on a Linux machine; use `--dry-run` first there.
 >
 > On a Mac, the `Alt` keys need the terminal to send Option as Alt; otherwise Option-g
 > types "©". The installer sets `macos-option-as-alt = true` in `~/.config/ghostty/config`
