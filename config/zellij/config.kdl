@@ -13,9 +13,10 @@ show_release_notes false
 
 keybinds {
     shared_except "locked" {
-        // lazygit in a floating pane, opened in the focused pane's directory.
+        // lazygit in a floating pane covering 95% of the screen, opened in the
+        // focused pane's directory. One per tab: pressing it again closes it.
         bind "Alt g" {
-            Run "lazygit" {
+            Run "wt-lazygit" {
                 floating true
                 close_on_exit true
             }

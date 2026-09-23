@@ -275,7 +275,7 @@ else
   Open a new terminal to land in the "$SESSION_HINT" zellij session.
     wts <branch>   open a worktree in its own tab (tab-completes)
     wts remove     remove a worktree and close its tab
-    Alt g          lazygit in a floating pane
+    Alt g          lazygit in a floating pane (one per tab)
     review         branch diff in Zed
   Undo with ./uninstall.sh
 EOF

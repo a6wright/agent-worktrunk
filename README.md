@@ -28,7 +28,8 @@ installer so it can be rebuilt on any machine.
   had. Flags pass through (`wts remove -f`, `-D`, `-y`); with no branch it removes the
   current worktree. `wts remove <TAB>` completes like `wt remove <TAB>`. A branch that is
   itself named `remove` has to be opened with `wt switch`.
-- **`Alt g`** opens lazygit in a floating pane, in the focused pane's directory.
+- **`Alt g`** opens lazygit in a floating pane covering 95% of the screen, in the focused
+  pane's directory. One per tab: pressing it again closes it.
 - **`review`** opens Zed with one multi-file diff of everything the branch changed since it
   forked from the default branch, committed or not. `review <ref>` compares against
   something else. The right-hand side is the live file, so edits land in the worktree.

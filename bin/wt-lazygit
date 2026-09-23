@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Toggle lazygit in a floating pane covering 95% of the screen, one per tab.
+#
+# Usage: wt-lazygit
+#
+# Bound to Alt g in the zellij config, which runs this in a new floating pane.
+# If the tab already has a lazygit pane, this closes it and exits, so its own
+# pane closes too; otherwise it sizes its pane and becomes lazygit.
+set -euo pipefail
+
+case ${1:-} in
+    -h | --help)
+        sed -n '2,/^set -euo/{/^set -euo/d;s/^# \{0,1\}//;p;}' "$0"
+        exit 0
+        ;;
+esac
+
+if [[ -z ${ZELLIJ:-} || -z ${ZELLIJ_PANE_ID:-} ]]; then
+    exec lazygit "$@"
+fi
+
+self=$ZELLIJ_PANE_ID
+name=$(basename "$0")
+
+# Another live pane in this tab that was started as this script.
+existing=$(zellij action list-panes --tab --command --state --json |
+    jq -r --argjson self "$self" --arg name "$name" '
+        (map(select(.id == $self and (.is_plugin | not))) | first | .tab_id) as $tab
+        | map(select((.is_plugin | not) and .id != $self and .tab_id == $tab
+                     and (.exited | not)
+                     and ((.terminal_command // "") | test("(^|/)" + $name + "( |$)"))))
+        | first // empty
+        | .id
+    ')
+
+if [[ -n $existing ]]; then
+    zellij action close-pane --pane-id "terminal_$existing"
+    exit 0
+fi
+
+zellij action change-floating-pane-coordinates --pane-id "terminal_$self" \
+    --x 2% --y 2% --width 95% --height 95% || true
+exec lazygit "$@"
