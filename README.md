@@ -24,6 +24,10 @@ installer so it can be rebuilt on any machine.
   the tab is already open, `wts` jumps to it. Tab completion is worktrunk's own, and anything
   `wt switch` accepts works (`wts -`, `wts ^`, `wts pr:12`, `wts --base main new-branch`);
   bare `wts` opens its picker. The pane you ran it from stays where it was.
+- **`wts remove [branch...]`** runs `wt remove` and then closes the tabs those worktrees
+  had. Flags pass through (`wts remove -f`, `-D`, `-y`); with no branch it removes the
+  current worktree. `wts remove <TAB>` completes like `wt remove <TAB>`. A branch that is
+  itself named `remove` has to be opened with `wt switch`.
 - **`Alt g`** opens lazygit in a floating pane, in the focused pane's directory.
 - **`review`** opens Zed with one multi-file diff of everything the branch changed since it
   forked from the default branch, committed or not. `review <ref>` compares against
@@ -59,10 +63,11 @@ Everything it does is recorded in `~/.local/state/agent-worktrunk/manifest`.
 > The macOS path has not been run on a Mac yet. It shares all its logic with the Linux path
 > except the `brew install` lines; use `--dry-run` first the first time.
 >
-> On a Mac, `Alt g` needs the terminal to send Option as Alt: in Ghostty set
-> `macos-option-as-alt = true`, in Terminal.app enable "Use Option as Meta key" in the
-> profile's Keyboard tab, in iTerm2 set the Option key to "Esc+" under Keys. Otherwise
-> Option-g types "©".
+> On a Mac, `Alt g` needs the terminal to send Option as Alt; otherwise Option-g types
+> "©". The installer sets `macos-option-as-alt = true` in `~/.config/ghostty/config`
+> (reload Ghostty's config with Cmd Shift , afterwards). For other terminals do it by
+> hand: in Terminal.app enable "Use Option as Meta key" in the profile's Keyboard tab,
+> in iTerm2 set the Option key to "Esc+" under Keys.
 
 ## Uninstall
 
@@ -116,5 +121,6 @@ config/zellij/config.kdl           overrides only; zellij merges it over its def
 config/zellij/layouts/             control.kdl (session), worktree.kdl (per-branch tab)
 shell/workflow.zsh                 auto-attach, wts and its completion, review alias
 bin/wts-open-tab                   finds or creates the tab; called by wts via `wt switch -x`
+bin/wts-tab-ids                    which tabs belong to which worktrees; used by wts remove
 bin/wt-review                      builds the diff pairs and hands them to Zed
 ```

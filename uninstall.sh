@@ -7,8 +7,9 @@
 #   --tools     also print the commands that remove the programs install.sh
 #               installed (printed, never run: other things may rely on them)
 #
-# Removes the ~/.zshrc block, the symlinks that point into this repo, and the
-# wt-review cache, then puts back anything install.sh had moved out of the way.
+# Removes the ~/.zshrc block, the Ghostty config block, the symlinks that point
+# into this repo, and the wt-review cache, then puts back anything install.sh had
+# moved out of the way.
 # Programs and zellij's saved sessions are left in place. Safe to re-run.
 set -euo pipefail
 
@@ -47,7 +48,7 @@ strip_block() {
     ' "$1"
 }
 
-remove_zshrc_block() {
+remove_block() {
     local file=$1 tmp
     [[ -f $file ]] || return 0
     if ! grep -Fxq -- "$MARK_BEGIN" "$file"; then
@@ -76,8 +77,26 @@ headline "Shell"
     echo "$HOME/.zshrc"
     manifest_list zshrc
 } | sort -u | while IFS= read -r f; do
-    remove_zshrc_block "$f"
+    remove_block "$f"
 done
+
+# --- ghostty --------------------------------------------------------------------
+
+if [[ $(uname -s) == Darwin ]]; then
+    headline "Ghostty"
+    {
+        echo "$GHOSTTY_CONFIG"
+        manifest_list ghostty
+    } | sort -u | while IFS= read -r f; do
+        remove_block "$f"
+        # A config that only ever held our block is ours to drop entirely.
+        if [[ -f $f && ! -s $f ]] && ! ((DRY_RUN)); then
+            step "removing empty $(tilde "$f")"
+            rm -f "$f"
+            rmdir "$(dirname "$f")" 2>/dev/null || true
+        fi
+    done
+fi
 
 # --- links ----------------------------------------------------------------------
 

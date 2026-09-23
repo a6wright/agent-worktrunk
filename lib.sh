@@ -10,6 +10,7 @@ STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/agent-worktrunk
 MANIFEST=$STATE_DIR/manifest
 BIN_DIR=$HOME/.local/bin
 WORKFLOW_LINK=$CONFIG_HOME/agent-worktrunk/workflow.zsh
+GHOSTTY_CONFIG=$CONFIG_HOME/ghostty/config
 SESSION_HINT=${WORKFLOW_SESSION:-main}
 
 MARK_BEGIN='# >>> agent-worktrunk >>>'
@@ -23,6 +24,18 @@ $MARK_BEGIN
 # Worktree workflow (zellij + worktrunk). Managed by agent-worktrunk/install.sh;
 # remove with uninstall.sh. Keep this at the end of the file.
 [ -r "\${XDG_CONFIG_HOME:-\$HOME/.config}/agent-worktrunk/workflow.zsh" ] && source "\${XDG_CONFIG_HOME:-\$HOME/.config}/agent-worktrunk/workflow.zsh"
+$MARK_END
+EOF
+}
+
+# What install.sh appends to Ghostty's config on macOS. Without it Option-g
+# types "©" and zellij never sees Alt g.
+ghostty_block() {
+    cat <<EOF
+$MARK_BEGIN
+# Send Option as Alt, so zellij's Alt keys (Alt g for lazygit) reach it.
+# Managed by agent-worktrunk/install.sh; remove with uninstall.sh.
+macos-option-as-alt = true
 $MARK_END
 EOF
 }
@@ -62,6 +75,7 @@ run() {
 #   backup  <original> <backup> something we moved out of the way
 #   tool    <name>              a program we installed (not merely found)
 #   zshrc   <file>              a file we appended the block to
+#   ghostty <file>              a Ghostty config we appended the block to
 
 manifest_has() { # kind value
     [[ -f $MANIFEST ]] && grep -Fxq -- "$1"$'\t'"$2" "$MANIFEST"

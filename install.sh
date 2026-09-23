@@ -187,6 +187,37 @@ install_zshrc_block() {
     manifest_add zshrc "$zshrc"
 }
 
+# --- ghostty ----------------------------------------------------------------------
+
+# On a Mac, Ghostty composes Option-g into "©" unless told to send Option as Alt.
+install_ghostty_block() {
+    [[ $OS == Darwin ]] || return 0
+    [[ -d /Applications/Ghostty.app ]] || have ghostty || return 0
+    local cfg=$GHOSTTY_CONFIG
+    local other="$HOME/Library/Application Support/com.mitchellh.ghostty/config"
+    if [[ -f $cfg ]] && grep -Fq "$MARK_BEGIN" "$cfg"; then
+        ok "$(tilde "$cfg") already sends Option as Alt"
+        return
+    fi
+    # A choice already made in either file Ghostty reads is theirs, not ours.
+    if grep -Eqs '^[[:space:]]*macos-option-as-alt[[:space:]]*=' "$cfg" "$other"; then
+        note "Ghostty already sets macos-option-as-alt; left alone (Alt g needs it on)"
+        return
+    fi
+    step "setting macos-option-as-alt in $(tilde "$cfg")"
+    if ((DRY_RUN)); then
+        would "append to $cfg:"
+        ghostty_block | sed 's/^/           /'
+        return
+    fi
+    mkdir -p "$(dirname "$cfg")"
+    [[ -s $cfg ]] && printf '\n' >>"$cfg"
+    ghostty_block >>"$cfg"
+    manifest_add ghostty "$cfg"
+    GHOSTTY_CHANGED=1
+}
+GHOSTTY_CHANGED=0
+
 # --- main -------------------------------------------------------------------------
 
 ((DRY_RUN)) && note "dry run: nothing will be changed"
@@ -223,6 +254,7 @@ done
 
 headline "Shell"
 install_zshrc_block
+install_ghostty_block
 case :$PATH: in
     *:"$BIN_DIR":*) ;;
     *) note "$(tilde "$BIN_DIR") is not on PATH yet; the workflow block adds it for zsh" ;;
@@ -242,9 +274,11 @@ else
     cat <<EOF
   Open a new terminal to land in the "$SESSION_HINT" zellij session.
     wts <branch>   open a worktree in its own tab (tab-completes)
+    wts remove     remove a worktree and close its tab
     Alt g          lazygit in a floating pane
     review         branch diff in Zed
   Undo with ./uninstall.sh
 EOF
+    ((GHOSTTY_CHANGED)) && echo "  Ghostty: reload its config (Cmd Shift ,) or restart it, so Alt g works."
 fi
 ((${#FAILED[@]} == 0))

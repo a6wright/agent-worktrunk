@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Print the zellij tabs whose panes sit inside the given worktrees.
+#
+# Usage: wts-tab-ids <worktree-path>...
+#
+# One "<worktree-path><TAB><tab-id>" line per tab, the active tab last, so a
+# caller closing them from inside one of them reaches the others first.
+# Called by `wts remove`, which needs the ids before the worktrees disappear
+# and their panes' directories with them.
+set -euo pipefail
+
+case ${1:-} in
+    -h | --help)
+        sed -n '2,/^set -euo/{/^set -euo/d;s/^# \{0,1\}//;p;}' "$0"
+        exit 0
+        ;;
+esac
+
+[[ $# -gt 0 ]] || { echo "usage: wts-tab-ids <worktree-path>..." >&2; exit 2; }
+if [[ -z ${ZELLIJ:-} ]]; then
+    echo "wts-tab-ids: not inside a zellij session" >&2
+    exit 1
+fi
+
+active=$(zellij action current-tab-info --json | jq '.position')
+set -- "${@%/}"
+
+# Same ownership rule as wts-open-tab: a tab is a worktree's when one of its
+# real panes has its working directory in it.
+zellij action list-panes --tab --command --json |
+    jq -r --argjson active "$active" '
+        $ARGS.positional as $wts
+        | [ .[]
+            | select(.is_plugin | not)
+            | . as $p
+            | ($p.pane_cwd // "") as $cwd
+            | $wts[]
+            | select($cwd == . or ($cwd | startswith(. + "/")))
+            | {wt: ., id: $p.tab_id, active: ($p.tab_position == $active)} ]
+        | unique_by(.id)
+        | sort_by(.active)
+        | .[]
+        | "\(.wt)\t\(.id)"
+    ' --args "$@"

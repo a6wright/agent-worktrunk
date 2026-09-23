@@ -24,6 +24,7 @@ fi
 #
 #   wts feature/some-story   create or attach to the worktree, open/jump to its tab
 #   wts                      pick a worktree interactively
+#   wts remove [branch...]   `wt remove`, then close the tabs those worktrees had
 #
 # Anything `wt switch` accepts works here (`-`, `^`, `pr:12`, `--base`, ...).
 wts() {
@@ -36,6 +37,12 @@ wts() {
     if ! git rev-parse --git-dir >/dev/null 2>&1; then
         print -u2 "wts: not inside a git repository"
         return 1
+    fi
+
+    if [[ $1 == remove ]]; then
+        shift
+        _wts_remove "$@"
+        return
     fi
 
     # `wt switch` refuses an unknown branch without --create and refuses a known
@@ -56,12 +63,50 @@ wts() {
         -x wts-open-tab -- '{{ branch }}' '{{ worktree_path }}'
 }
 
+# Everything after `remove` goes to `wt remove` (-f, -D, -y, ...), so with no
+# branch named it removes the current worktree. Runs in the foreground so the
+# tabs close only once worktrunk is done. `wt` here is worktrunk's shell
+# function, which moves this pane out of a worktree it has just removed.
+_wts_remove() {
+    emulate -L zsh
+    local list main
+    if ! list=$(command wt list --format json); then
+        print -u2 "wts: could not list worktrees"
+        return 1
+    fi
+    main=$(print -r -- "$list" | jq -r '.items[] | select(.worktree.main) | .worktree.path')
+
+    # Which tabs belong to which worktree has to be settled now: after removal
+    # the panes' directories are gone and the lookup would find nothing.
+    local -a before after gone tabs foreground
+    before=(${(f)"$(print -r -- "$list" | jq -r '.items[].worktree.path')"})
+    tabs=(${(f)"$(wts-tab-ids "${before[@]}")"})
+
+    [[ -n ${(M)@:#--foreground} ]] || foreground=(--foreground)
+    wt remove $foreground "$@" || return $?
+
+    after=(${(f)"$(command wt list -C "$main" --format json | jq -r '.items[].worktree.path')"})
+    gone=(${before:|after})
+    local line
+    for line in $tabs; do
+        (( ${gone[(Ie)${line%%$'\t'*}]} )) || continue
+        zellij action close-tab-by-id "${line##*$'\t'}"
+    done
+}
+
 # Completion: borrow worktrunk's own completer by presenting the command line as
-# `wt switch ...`, so `wts <TAB>` offers exactly what `wt switch <TAB>` does.
+# `wt switch ...` (or `wt remove ...`), so `wts <TAB>` offers exactly what
+# `wt switch <TAB>` does, plus `remove`, and `wts remove <TAB>` what `wt remove
+# <TAB>` does.
 _wts() {
     (( $+functions[_wt_lazy_complete] )) || return 1
-    words=(wt switch "${(@)words[2,-1]}")
-    (( CURRENT += 1 ))
+    if [[ $words[2] == remove ]]; then
+        words=(wt remove "${(@)words[3,-1]}")
+    else
+        (( CURRENT == 2 )) && compadd -- remove
+        words=(wt switch "${(@)words[2,-1]}")
+        (( CURRENT += 1 ))
+    fi
     _wt_lazy_complete "$@"
 }
 (( $+functions[compdef] )) && compdef _wts wts
