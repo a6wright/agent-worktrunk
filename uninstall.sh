@@ -209,6 +209,8 @@ if ((SHOW_TOOLS)); then
                     fi
                     ;;
                 Linux:zed) echo "    zed --uninstall" ;;
+                Linux:glow | Linux:moor) echo "    rm $(tilde "$BIN_DIR")/$t" ;;
+                Linux:termaid) echo "    uv tool uninstall termaid   # or: pipx uninstall termaid" ;;
                 Linux:*) echo "    sudo apt-get remove $t" ;;
             esac
         done

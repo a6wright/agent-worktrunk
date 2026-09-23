@@ -1,0 +1,3 @@
+# Layered over your own lazygit config for the Alt g pane (see bin/wt-lazygit).
+# Esc with no popup open quits lazygit, which closes the floating pane.
+quitOnTopLevelReturn: true

@@ -63,23 +63,43 @@ install_tools_macos() {
     have zellij || try zellij brew install zellij
     have wt || try worktrunk brew install worktrunk
     have lazygit || try lazygit brew install lazygit
+    have fzf || try fzf brew install fzf
+    have glow || try glow brew install glow
+    have moor || try moor brew install moor
+    have termaid || try termaid brew install termaid
     have zed || try zed brew install --cask zed
     [[ -d /Applications/Ghostty.app ]] || have ghostty || try ghostty brew install --cask ghostty
 }
 
-lazygit_from_github() {
-    local arch url
+# from_github <owner/repo> <binary>: the latest Linux release tarball of a Go
+# tool, its binary put in ~/.local/bin wherever the archive keeps it.
+from_github() {
+    local repo=$1 bin=$2 arch url tmp
     case $(uname -m) in
         x86_64) arch=x86_64 ;;
         aarch64 | arm64) arch=arm64 ;;
         *) return 1 ;;
     esac
-    url=$(curl -fsSL https://api.github.com/repos/jesseduffield/lazygit/releases/latest |
+    url=$(curl -fsSL "https://api.github.com/repos/$repo/releases/latest" |
         jq -r --arg a "$arch" '.assets[].browser_download_url
             | select(test("_linux_" + $a + "\\.tar\\.gz$"; "i"))' | head -n1)
     [[ -n $url ]] || return 1
+    tmp=$(mktemp -d)
+    curl -fsSL "$url" | tar -xz -C "$tmp" || { rm -rf "$tmp"; return 1; }
     mkdir -p "$BIN_DIR"
-    curl -fsSL "$url" | tar -xz -C "$BIN_DIR" lazygit
+    find "$tmp" -type f -name "$bin" -exec mv {} "$BIN_DIR/$bin" \;
+    rm -rf "$tmp"
+    [[ -x $BIN_DIR/$bin ]]
+}
+
+# moor ships bare binaries, and none for arm64 Linux.
+moor_from_github() {
+    local url
+    url=$(curl -fsSL https://api.github.com/repos/walles/moor/releases/latest |
+        jq -r '.assets[].browser_download_url | select(endswith("-linux-amd64"))' | head -n1)
+    [[ -n $url ]] || return 1
+    mkdir -p "$BIN_DIR"
+    curl -fsSL -o "$BIN_DIR/moor" "$url" && chmod +x "$BIN_DIR/moor"
 }
 
 ensure_binstall() {
@@ -88,6 +108,18 @@ ensure_binstall() {
         https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
     export PATH="$HOME/.cargo/bin:$PATH"
     have cargo-binstall
+}
+
+# Python CLIs, each in its own environment, with the command in ~/.local/bin.
+pytool() {
+    if have uv; then
+        uv tool install "$1"
+    elif have pipx; then
+        pipx install "$1"
+    else
+        warn "$1 needs uv or pipx (sudo apt-get install pipx)"
+        return 1
+    fi
 }
 
 # Prebuilt binaries straight into ~/.local/bin, so a machine with no Rust
@@ -99,7 +131,7 @@ binstall() {
 install_tools_linux() {
     local apt_pkgs=() p
     if have apt-get; then
-        for p in git zsh jq curl; do have "$p" || apt_pkgs+=("$p"); done
+        for p in git zsh jq curl fzf; do have "$p" || apt_pkgs+=("$p"); done
         if ! have lazygit && apt-cache show lazygit >/dev/null 2>&1; then
             apt_pkgs+=(lazygit)
         fi
@@ -107,7 +139,7 @@ install_tools_linux() {
             try "${apt_pkgs[*]}" sudo apt-get install -y "${apt_pkgs[@]}"
         fi
     else
-        for p in git zsh jq curl; do
+        for p in git zsh jq curl fzf; do
             have "$p" || warn "$p is missing; install it with your package manager"
         done
     fi
@@ -119,12 +151,21 @@ install_tools_linux() {
     # Not packaged on older Ubuntu/Debian; fall back to the upstream release.
     # Skipped when apt is about to provide it (matters only under --dry-run).
     if ! have lazygit && [[ " ${apt_pkgs[*]-} " != *" lazygit "* ]]; then
-        try lazygit lazygit_from_github
+        try lazygit from_github jesseduffield/lazygit lazygit
     fi
 
     mkdir -p "$BIN_DIR"
     have zellij || try zellij binstall zellij
     have wt || try worktrunk binstall worktrunk
+    have glow || try glow from_github charmbracelet/glow glow
+    if ! have moor; then
+        if [[ $(uname -m) == x86_64 ]]; then
+            try moor moor_from_github
+        else
+            note "moor has no build for $(uname -m); wt-md pages with less instead (q, not Esc, leaves a file)"
+        fi
+    fi
+    have termaid || try termaid pytool termaid
     have zed || try zed sh -c 'curl -fsSL https://zed.dev/install.sh | sh'
     have ghostty || note "Ghostty not found. Any terminal works; see https://ghostty.org/docs/install/binary"
 }
@@ -230,7 +271,7 @@ if ((INSTALL_TOOLS)); then
         Linux) install_tools_linux ;;
         *) die "unsupported OS: $OS" ;;
     esac
-    for t in git zsh jq zellij wt lazygit zed; do
+    for t in git zsh jq zellij wt lazygit fzf glow moor termaid zed; do
         if have "$t"; then
             ok "$t"
         elif ! ((DRY_RUN)); then
@@ -275,7 +316,8 @@ else
   Open a new terminal to land in the "$SESSION_HINT" zellij session.
     wts <branch>   open a worktree in its own tab (tab-completes)
     wts remove     remove a worktree and close its tab
-    Alt g          lazygit in a floating pane (one per tab)
+    Alt g          lazygit in a floating pane (one per tab; Esc closes it)
+    Alt m          the repo's markdown, rendered, Mermaid included (Esc closes it)
     review         branch diff in Zed
   Undo with ./uninstall.sh
 EOF

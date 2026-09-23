@@ -13,10 +13,18 @@ show_release_notes false
 
 keybinds {
     shared_except "locked" {
-        // lazygit in a floating pane covering 95% of the screen, opened in the
-        // focused pane's directory. One per tab: pressing it again closes it.
+        // Floating panes covering 95% of the screen, opened in the focused
+        // pane's directory. One of each per tab: pressing the key again closes it.
+        // lazygit, with Esc to quit (config/lazygit/float.yml).
         bind "Alt g" {
-            Run "wt-lazygit" {
+            Run "wt-float" "wt-lazygit" {
+                floating true
+                close_on_exit true
+            }
+        }
+        // The repo's markdown, picked with fzf, rendered with Mermaid diagrams.
+        bind "Alt m" {
+            Run "wt-float" "wt-md" {
                 floating true
                 close_on_exit true
             }

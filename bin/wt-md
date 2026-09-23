@@ -1,0 +1,207 @@
+#!/usr/bin/env bash
+# Read the repo's markdown rendered in the terminal, Mermaid diagrams included.
+#
+# Usage: wt-md [file]
+#        wt-md --render <file>
+#
+# With no file, lists the repo's markdown files (tracked and untracked, not
+# ignored) in fzf with a rendered preview. Enter opens one in a pager; q or Esc
+# there returns to the list, and Esc in the list leaves. Diagrams wider than the
+# window scroll sideways in the pager with the arrow keys. Outside a git repo it lists the
+# markdown files under the current directory.
+#
+# --render prints a file rendered, for the preview or for piping.
+#
+# Markdown is rendered by glow, Mermaid blocks drawn as text by termaid; a block
+# termaid cannot draw is shown as its source. WT_MD_STYLE picks the glow style
+# (default dark; light, dracula, tokyo-night, pink, or a JSON path).
+# WT_MD_WIDTH caps the line length (default 120).
+set -euo pipefail
+
+case ${1:-} in
+    -h | --help)
+        sed -n '2,/^set -euo/{/^set -euo/d;s/^# \{0,1\}//;p;}' "$0"
+        exit 0
+        ;;
+esac
+
+# The width in characters of the longest line of $1.
+widest() {
+    local line max=0
+    while IFS= read -r line; do
+        ((${#line} <= max)) || max=${#line}
+    done <<<"$1"
+    echo "$max"
+}
+
+# Copy markdown through for glow, with two changes:
+#  - each ```mermaid block is drawn by termaid, to fit <width> if it can, into
+#    <dir>/<n>, and replaced by a placeholder code block for splice to fill in
+#    after glow, which would otherwise wrap a drawing wider than the window;
+#  - the lines of a paragraph or list item are joined, because glow keeps the
+#    source's line breaks, which leaves hard-wrapped text ragged.
+prepare() {
+    local width=$1 dir=$2 line fence="" mermaid=0 opener="" block="" drawing
+    local para="" joinable=0 table=0 n=0
+    flush() {
+        if [[ -n $para ]]; then printf '%s\n' "$para"; fi
+        para="" joinable=0
+    }
+    while IFS= read -r line || [[ -n $line ]]; do
+        # Inside a fenced block: copy through, or collect a Mermaid one.
+        if [[ -n $fence ]]; then
+            if [[ $line =~ ^[[:space:]]*${fence}[[:space:]]*$ ]]; then
+                if ((mermaid)); then
+                    # termaid exits 0 on input it cannot parse, with blank output.
+                    drawing=$(printf '%s' "$block" | termaid --width "$width" 2>/dev/null) || drawing=""
+                    # Squeezed and still too wide: it will scroll anyway, so
+                    # draw it with room to breathe.
+                    if (($(widest "$drawing") > width)); then
+                        drawing=$(printf '%s' "$block" | termaid --no-auto-fit 2>/dev/null) || drawing=""
+                    fi
+                    if [[ -n ${drawing//[[:space:]]/} ]]; then
+                        n=$((n + 1))
+                        printf '%s\n' "$drawing" >"$dir/$n"
+                        printf '%s\nWTMD-DIAGRAM-%s\n%s\n' "$fence" "$n" "$fence"
+                    else
+                        printf '%s\n%s%s\n' "$opener" "$block" "$line"
+                    fi
+                else
+                    printf '%s\n' "$line"
+                fi
+                fence=""
+            elif ((mermaid)); then
+                block+=$line$'\n'
+            else
+                printf '%s\n' "$line"
+            fi
+            continue
+        fi
+
+        if [[ $line =~ ^[[:space:]]*(\`\`\`+|~~~+)[[:space:]]*([^[:space:]]*) ]]; then
+            flush
+            fence=${BASH_REMATCH[1]} opener=$line block="" mermaid=0
+            if [[ ${BASH_REMATCH[2]} == mermaid ]]; then
+                mermaid=1
+            else
+                printf '%s\n' "$line"
+            fi
+        elif [[ -z ${line//[[:space:]]/} ]]; then
+            flush
+            table=0
+            printf '\n'
+        elif ((table)); then
+            printf '%s\n' "$line"
+        elif [[ $line == *'|'* && $line =~ ^[[:space:]|:-]+$ ]]; then
+            # A table's delimiter row: the line before was its header.
+            flush
+            table=1
+            printf '%s\n' "$line"
+        elif [[ $line =~ ^[[:space:]]*([-*+]|[0-9]+[.\)])[[:space:]] ]]; then
+            # A list item starts a paragraph of its own.
+            flush
+            para=$line joinable=1
+        elif [[ $line =~ ^[[:space:]]*([#\>\|\<]|\[[^]]+\]:|(---|\*\*\*|___|===)) ]] ||
+            [[ $line =~ ^(\ {4}|$'\t') && $joinable == 0 ]]; then
+            # Headings, quotes, tables, HTML, link definitions, rules and
+            # indented code stay on their own lines.
+            flush
+            printf '%s\n' "$line"
+        elif ((joinable)) && [[ ! $para =~ (\ \ |\\)$ ]]; then
+            para+=" ${line#"${line%%[![:space:]]*}"}"
+        else
+            flush
+            para=$line joinable=1
+        fi
+    done
+    flush
+    # An unclosed Mermaid block is left as it was.
+    if [[ -n $fence ]] && ((mermaid)); then
+        printf '%s\n%s' "$opener" "$block"
+    fi
+}
+
+# Swap glow's rendering of each placeholder for the drawing it stands for,
+# indented to where glow put the placeholder.
+splice() {
+    awk -v dir="$1" '
+        /WTMD-DIAGRAM-[0-9]+/ {
+            plain = $0
+            gsub(/\033\[[0-9;]*m/, "", plain)
+            if (match(plain, /WTMD-DIAGRAM-[0-9]+/)) {
+                indent = sprintf("%" (RSTART - 1) "s", "")
+                file = dir "/" substr(plain, RSTART + 13, RLENGTH - 13)
+                while ((getline l < file) > 0) print indent l
+                close(file)
+                next
+            }
+        }
+        { print }
+    '
+}
+
+render() {
+    local cols=${FZF_PREVIEW_COLUMNS:-}
+    # Asked of the terminal itself: stdout is a pipe into the pager.
+    [[ -n $cols ]] || cols=$(stty size </dev/tty 2>/dev/null | cut -d' ' -f2) || true
+    [[ -n $cols ]] || cols=100
+    # Long lines are hard to read; wide diagrams still get the capped width.
+    ((cols <= ${WT_MD_WIDTH:-120})) || cols=${WT_MD_WIDTH:-120}
+    local dir
+    dir=$(mktemp -d)
+    # Room for glow's margin and the indent code blocks get inside list items.
+    # glow reads stdin here: given a path without a terminal, it can hang.
+    prepare $((cols - 8)) "$dir" <"$1" |
+        glow --style "${WT_MD_STYLE:-dark}" --width "$cols" - |
+        splice "$dir"
+    rm -rf "$dir"
+}
+
+# moor rather than less where it is installed: both scroll sideways for wide
+# diagrams, but only moor quits on Esc, which less cannot tell apart from the
+# start of an arrow key.
+view() {
+    if command -v moor >/dev/null; then
+        render "$1" | moor -no-linenumbers
+    else
+        render "$1" | less -RS
+    fi
+}
+
+list() {
+    local f
+    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        git ls-files --cached --others --exclude-standard -- '*.md' '*.markdown' |
+            sort -u | while IFS= read -r f; do [[ -f $f ]] && printf '%s\n' "$f"; done
+    else
+        find . \( -name .git -o -name node_modules \) -prune -o \
+            -type f \( -name '*.md' -o -name '*.markdown' \) -print |
+            sed 's|^\./||' | sort
+    fi
+}
+
+if [[ ${1:-} == --render ]]; then
+    [[ -n ${2:-} ]] || { echo "usage: wt-md --render <file>" >&2; exit 2; }
+    render "$2"
+    exit 0
+fi
+
+if [[ -n ${1:-} ]]; then
+    view "$1"
+    exit 0
+fi
+
+top=$(git rev-parse --show-toplevel 2>/dev/null) && cd "$top"
+
+files=$(list)
+if [[ -z $files ]]; then
+    echo "no markdown files under $PWD"
+    read -rsn1 -p "press any key to close" || true
+    exit 0
+fi
+
+me=$(printf '%q' "$0")
+while file=$(fzf --prompt 'md> ' --layout reverse \
+    --preview "$me --render {}" --preview-window 'right,65%' <<<"$files"); do
+    view "$file"
+done

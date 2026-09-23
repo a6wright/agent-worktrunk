@@ -29,7 +29,16 @@ installer so it can be rebuilt on any machine.
   current worktree. `wts remove <TAB>` completes like `wt remove <TAB>`. A branch that is
   itself named `remove` has to be opened with `wt switch`.
 - **`Alt g`** opens lazygit in a floating pane covering 95% of the screen, in the focused
-  pane's directory. One per tab: pressing it again closes it.
+  pane's directory. One per tab: pressing it again closes it, and so does Esc once no
+  lazygit popup is open.
+- **`Alt m`** reads the repo's markdown the same way: a floating pane with every `.md`
+  file in fzf and a rendered preview. Enter opens one in a pager
+  ([moor](https://github.com/walles/moor)), Esc or `q` goes back to the list, and Esc
+  there (or `Alt m` anywhere) closes it. Mermaid blocks are drawn as text diagrams by
+  [termaid](https://github.com/fasouto/termaid), and a diagram wider than the window
+  scrolls sideways with the arrow keys; the rest is rendered by
+  [glow](https://github.com/charmbracelet/glow). `wt-md <file>` does the same from a shell.
+  There are samples to try in `examples/`.
 - **`review`** opens Zed with one multi-file diff of everything the branch changed since it
   forked from the default branch, committed or not. `review <ref>` compares against
   something else. The right-hand side is the live file, so edits land in the worktree.
@@ -47,9 +56,11 @@ Then open a new terminal.
 
 The installer is safe to re-run; a second run changes nothing. It:
 
-1. Installs whichever of git, zsh, jq, zellij, worktrunk, lazygit and Zed are missing.
-   macOS uses Homebrew (and adds Ghostty). Linux uses apt where it can, prebuilt binaries
-   into `~/.local/bin` for zellij and worktrunk, and Zed's own installer.
+1. Installs whichever of git, zsh, jq, zellij, worktrunk, lazygit, fzf, glow, moor,
+   termaid and Zed are missing. macOS uses Homebrew (and adds Ghostty). Linux uses apt
+   where it can, prebuilt binaries into `~/.local/bin` for zellij, worktrunk, glow and
+   moor (x86_64 only; elsewhere `wt-md` pages with less), uv or pipx for termaid, and Zed's
+   own installer.
    `--no-tools` skips this step.
 2. Links `config/zellij` to `~/.config/zellij`. An existing config is moved to a timestamped
    backup first.
@@ -64,8 +75,8 @@ Everything it does is recorded in `~/.local/state/agent-worktrunk/manifest`.
 > The macOS path has not been run on a Mac yet. It shares all its logic with the Linux path
 > except the `brew install` lines; use `--dry-run` first the first time.
 >
-> On a Mac, `Alt g` needs the terminal to send Option as Alt; otherwise Option-g types
-> "©". The installer sets `macos-option-as-alt = true` in `~/.config/ghostty/config`
+> On a Mac, `Alt g` and `Alt m` need the terminal to send Option as Alt; otherwise
+> Option-g types "©". The installer sets `macos-option-as-alt = true` in `~/.config/ghostty/config`
 > (reload Ghostty's config with Cmd Shift , afterwards). For other terminals do it by
 > hand: in Terminal.app enable "Use Option as Meta key" in the profile's Keyboard tab,
 > in iTerm2 set the Option key to "Esc+" under Keys.
@@ -104,7 +115,9 @@ Nothing here is tied to one person's machine. The parts most worth changing:
 
 - `config/zellij/layouts/worktree.kdl`: pane arrangement, or start a command in a pane
   (`pane command="nvim"`).
-- `config/zellij/config.kdl`: the lazygit key, themes, any other zellij option. Note that
+- `config/lazygit/float.yml`: lazygit settings for the `Alt g` pane only, layered over
+  your own lazygit config.
+- `config/zellij/config.kdl`: the lazygit and markdown keys, themes, any other zellij option. Note that
   zellij's own settings UI writes to this file too, since `~/.config/zellij` links here.
 - `shell/workflow.zsh`: session name, when auto-attach is skipped.
 

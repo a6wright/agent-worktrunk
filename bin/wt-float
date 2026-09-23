@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Toggle a command in a floating pane covering 95% of the screen, one per tab.
+#
+# Usage: wt-float <command> [args...]
+#
+# Bound to keys in the zellij config (Alt g: lazygit, Alt m: wt-md), which run
+# this in a new floating pane. If the tab already has a pane started as
+# `wt-float <command>`, this closes it and exits, so its own pane closes too;
+# otherwise it sizes its pane and becomes the command.
+set -euo pipefail
+
+case ${1:-} in
+    -h | --help)
+        sed -n '2,/^set -euo/{/^set -euo/d;s/^# \{0,1\}//;p;}' "$0"
+        exit 0
+        ;;
+esac
+
+[[ $# -gt 0 ]] || { echo "usage: wt-float <command> [args...]" >&2; exit 2; }
+
+if [[ -z ${ZELLIJ:-} || -z ${ZELLIJ_PANE_ID:-} ]]; then
+    exec "$@"
+fi
+
+self=$ZELLIJ_PANE_ID
+
+# Another live pane in this tab that was started as `wt-float <command>`.
+existing=$(zellij action list-panes --tab --command --state --json |
+    jq -r --argjson self "$self" --arg me "$(basename "$0")" --arg cmd "$1" '
+        (map(select(.id == $self and (.is_plugin | not))) | first | .tab_id) as $tab
+        | map(select((.is_plugin | not) and .id != $self and .tab_id == $tab
+                     and (.exited | not)
+                     and ((.terminal_command // "") | split(" ")
+                          | (.[0] // "" | split("/") | last) == $me and .[1] == $cmd)))
+        | first // empty
+        | .id
+    ')
+
+if [[ -n $existing ]]; then
+    zellij action close-pane --pane-id "terminal_$existing"
+    exit 0
+fi
+
+zellij action change-floating-pane-coordinates --pane-id "terminal_$self" \
+    --x 2% --y 2% --width 95% --height 95% || true
+exec "$@"

@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
-# Toggle lazygit in a floating pane covering 95% of the screen, one per tab.
+# lazygit for the Alt g pane: your own lazygit config, with config/lazygit/float.yml
+# from this repo layered over it so that Esc (with no popup open) quits.
 #
-# Usage: wt-lazygit
-#
-# Bound to Alt g in the zellij config, which runs this in a new floating pane.
-# If the tab already has a lazygit pane, this closes it and exits, so its own
-# pane closes too; otherwise it sizes its pane and becomes lazygit.
+# Usage: wt-lazygit [lazygit args...]
 set -euo pipefail
 
 case ${1:-} in
@@ -15,29 +12,15 @@ case ${1:-} in
         ;;
 esac
 
-if [[ -z ${ZELLIJ:-} || -z ${ZELLIJ_PANE_ID:-} ]]; then
-    exec lazygit "$@"
+# This runs through a link in ~/.local/bin; the overlay sits in the repo.
+repo=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+overlay=$repo/config/lazygit/float.yml
+
+# LG_CONFIG_FILE replaces lazygit's default config file, so name that too.
+base=${LG_CONFIG_FILE:-$(lazygit --print-config-dir)/config.yml}
+if [[ -n ${LG_CONFIG_FILE:-} || -f $base ]]; then
+    export LG_CONFIG_FILE=$base,$overlay
+else
+    export LG_CONFIG_FILE=$overlay
 fi
-
-self=$ZELLIJ_PANE_ID
-name=$(basename "$0")
-
-# Another live pane in this tab that was started as this script.
-existing=$(zellij action list-panes --tab --command --state --json |
-    jq -r --argjson self "$self" --arg name "$name" '
-        (map(select(.id == $self and (.is_plugin | not))) | first | .tab_id) as $tab
-        | map(select((.is_plugin | not) and .id != $self and .tab_id == $tab
-                     and (.exited | not)
-                     and ((.terminal_command // "") | test("(^|/)" + $name + "( |$)"))))
-        | first // empty
-        | .id
-    ')
-
-if [[ -n $existing ]]; then
-    zellij action close-pane --pane-id "terminal_$existing"
-    exit 0
-fi
-
-zellij action change-floating-pane-coordinates --pane-id "terminal_$self" \
-    --x 2% --y 2% --width 95% --height 95% || true
 exec lazygit "$@"
