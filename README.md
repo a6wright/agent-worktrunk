@@ -1,8 +1,11 @@
 # agent-worktrunk
 
-A terminal workflow built on [zellij](https://zellij.dev), [worktrunk](https://worktrunk.dev),
-[lazygit](https://github.com/jesseduffield/lazygit) and [Zed](https://zed.dev), with an
-installer so it can be rebuilt on any machine.
+A lightweight setup for working across several repos and several workstreams at once
+without leaving the terminal, built for driving agent CLIs like Claude Code. Each branch
+gets its own git worktree and its own zellij tab, so agents can work in parallel without
+touching each other's files, and reviewing, committing and reading docs happen in floating
+panes over the same tab. It is a set of configs and small scripts over existing tools, not
+a new app, with an installer so it can be rebuilt on any machine.
 
 ![wts opens a worktree tab; Alt m reads a doc with its Mermaid diagram; Alt r reviews the change in tuicr and leaves a line comment; Alt g opens lazygit](docs/demo.gif)
 
@@ -58,6 +61,29 @@ installer so it can be rebuilt on any machine.
 - **`review`** opens Zed with one multi-file diff of everything the branch changed since it
   forked from the default branch, committed or not. `review <ref>` compares against
   something else. The right-hand side is the live file, so edits land in the worktree.
+
+## Tools
+
+The installer adds any of these that are missing (see [Install](#install)).
+
+| Tool | Used for |
+| --- | --- |
+| [zellij](https://zellij.dev) | The terminal multiplexer: the shared session, a tab per worktree, floating panes |
+| [worktrunk](https://worktrunk.dev) | Creating, switching and removing git worktrees (`wt`), behind `wts` |
+| [git](https://git-scm.com) | Everything underneath |
+| [zsh](https://www.zsh.org) | The shell the workflow (`wts`, completion, auto-attach) is written for |
+| [lazygit](https://github.com/jesseduffield/lazygit) | Git UI in the `Alt g` pane |
+| [tuicr](https://github.com/agavra/tuicr) | PR-style diff review and line comments (`Alt r`), and the review loop with Claude Code |
+| [GitHub CLI](https://cli.github.com) (`gh`) | GitHub access for tuicr and gh-dash, and `wts pr:<n>` |
+| [gh-dash](https://github.com/dlvhdr/gh-dash) | Pull request dashboard in the `Alt d` pane |
+| [fzf](https://github.com/junegunn/fzf) | The file picker in `Alt m` |
+| [glow](https://github.com/charmbracelet/glow) | Rendering markdown in the terminal |
+| [termaid](https://github.com/fasouto/termaid) | Drawing Mermaid diagrams as text |
+| [moor](https://github.com/walles/moor) | The pager for rendered markdown |
+| [jq](https://jqlang.github.io/jq/) | JSON handling in the scripts |
+| [Zed](https://zed.dev) | The `review` command's multi-file diff, when you want a GUI |
+| [Ghostty](https://ghostty.org) | The terminal on macOS (optional; any terminal works) |
+| [Claude Code](https://claude.com/claude-code) | The agent CLI the review loop is built around (not installed for you) |
 
 ## Install
 
