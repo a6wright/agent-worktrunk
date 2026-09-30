@@ -1,5 +1,6 @@
-// Session layout: one tab named "control" with a single pane. That pane is
-// zellij's pane 0, which is how shell/workflow.zsh knows to start the hub in it.
+// Session layout: one tab named "control", split top/bottom. The top pane is a
+// plain shell and has focus; the bottom one is named "hub", which is how
+// shell/workflow.zsh knows to start the hub in it.
 // Worktree tabs are added later by `wts` using layouts/worktree.kdl.
 layout {
     default_tab_template {
@@ -12,6 +13,9 @@ layout {
         }
     }
     tab name="control" focus=true {
-        pane
+        pane split_direction="horizontal" {
+            pane size="50%" focus=true
+            pane name="hub"
+        }
     }
 }

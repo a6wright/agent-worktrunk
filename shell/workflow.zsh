@@ -113,13 +113,21 @@ _wts() {
 
 # --- hub: every project and worktree on one screen ---------------------------
 #
-# The control tab's pane is the first one zellij creates, pane 0, whether the
-# session is new or resurrected after a reboot. Its shell starts in the hub;
-# quitting the hub leaves the shell, and `hub` brings it back. Every other pane
+# The control tab is a shell on top of the hub (layouts/control.kdl). The pane
+# named "hub" there starts its shell in the hub, in a new session and in one
+# resurrected after a reboot, since pane names are saved with the layout.
+# Quitting the hub leaves the shell, and `hub` brings it back. Every other pane
 # is a plain shell. WORKFLOW_NO_HUB turns this off.
 alias hub=wt-hub
-if [[ -o interactive && -t 0 && -t 1 && -n $ZELLIJ && $ZELLIJ_PANE_ID == 0 \
-      && -z $WORKFLOW_NO_HUB ]] && (( $+commands[wt-hub] )); then
+_workflow_in_hub_pane() {
+    [[ $ZELLIJ_PANE_ID == <-> ]] || return 1
+    zellij action list-panes --json 2>/dev/null |
+        jq -e --argjson id "$ZELLIJ_PANE_ID" \
+            'any(.[]; type == "object" and (.is_plugin | not) and .id == $id and .title == "hub")' \
+            >/dev/null
+}
+if [[ -o interactive && -t 0 && -t 1 && -n $ZELLIJ && -z $WORKFLOW_NO_HUB ]] \
+    && (( $+commands[wt-hub] && $+commands[jq] )) && _workflow_in_hub_pane; then
     wt-hub
 fi
 

@@ -16,8 +16,9 @@ a new app, with an installer so it can be rebuilt on any machine.
 - **Every terminal lands in one zellij session**, `main`. It is created on first use, attached
   if running, and resurrected if it died (reboot included). Open a second terminal window and
   it joins the same session.
-- **The first tab, `control`, is the hub**: every git project under `~/workspace` with its
-  worktrees, whether a tab is open for each, how far it has drifted, and its last commit.
+- **The first tab, `control`, is a shell on top of the hub.** The shell has focus, for
+  ordinary terminal work. The hub below it shows every git project under `~/workspace` with
+  its worktrees, whether a tab is open for each, how far it has drifted, and its last commit.
 
   ```
   PROJECT           BRANCH           AGE  STATUS      LAST COMMIT
@@ -177,7 +178,7 @@ Set these before the workflow block in `~/.zshrc`, or in the environment:
 | `WORKFLOW_SESSION` | `main` | Name of the session terminals attach to |
 | `WORKFLOW_NO_ZELLIJ` | unset | Set to anything to skip auto-attach for that shell |
 | `WORKFLOW_ROOT` | `$HOME/workspace` | Where the hub looks for projects; colon-separated for several |
-| `WORKFLOW_NO_HUB` | unset | Set to anything to keep the control tab a plain shell |
+| `WORKFLOW_NO_HUB` | unset | Set to anything to keep the control tab's bottom pane a plain shell |
 | `WTS_LAYOUT` | `worktree` | Layout name (in `config/zellij/layouts`) or path used for new tabs |
 
 Auto-attach is also skipped inside zellij, in shells without a real terminal, and in the
@@ -185,8 +186,8 @@ embedded terminals of Zed, VS Code, JetBrains and Emacs.
 
 The hub lists the git repositories directly under `WORKFLOW_ROOT`; a directory whose `.git` is
 a file is a linked worktree and appears under its project instead. Worktrees themselves are
-found through worktrunk, so they can live anywhere. The hub starts in zellij's pane 0, which
-is the control tab's pane in a new session and in a resurrected one.
+found through worktrunk, so they can live anywhere. The hub starts in the pane named `hub` in
+`control.kdl`; pane names are saved with the session, so a resurrected session gets it back.
 
 Two repos with the same branch name do not share a tab: the second one is named
 `<repo>:<branch>`.
