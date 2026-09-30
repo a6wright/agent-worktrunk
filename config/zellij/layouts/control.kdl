@@ -1,4 +1,5 @@
-// Session layout: one tab named "control" with a single pane.
+// Session layout: one tab named "control" with a single pane. That pane is
+// zellij's pane 0, which is how shell/workflow.zsh knows to start the hub in it.
 // Worktree tabs are added later by `wts` using layouts/worktree.kdl.
 layout {
     default_tab_template {

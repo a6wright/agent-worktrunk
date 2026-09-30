@@ -14,8 +14,22 @@ a new app, with an installer so it can be rebuilt on any machine.
 ## What you get
 
 - **Every terminal lands in one zellij session**, `main`. It is created on first use, attached
-  if running, and resurrected if it died (reboot included). The first tab is `control`: one pane.
-  Open a second terminal window and it joins the same session.
+  if running, and resurrected if it died (reboot included). Open a second terminal window and
+  it joins the same session.
+- **The first tab, `control`, is the hub**: every git project under `~/workspace` with its
+  worktrees, whether a tab is open for each, how far it has drifted, and its last commit.
+
+  ```
+  PROJECT           BRANCH           AGE  STATUS      LAST COMMIT
+  agent-worktrunk   main         ●    8d  +261 -45 ?  Portability: BSD sed in --help
+  weneedgroceries   ui-fixes         29w  +6201 -0    fix(size): fix layouts
+                    main         ●   31w  *           Merge pull request #1 from a6wright
+  ```
+
+  `enter` opens the worktree's tab (or jumps to it), `ctrl-x` starts a new worktree in the
+  highlighted project, `ctrl-r` refreshes, `esc` leaves you at a shell in the same pane;
+  `hub` brings it back from anywhere. The right-hand side previews `git status` and the log.
+  `hub --list` prints the table without the picker.
 - **`wts <branch>`** opens a worktree in its own tab, named after the branch: a full-height
   pane on the left, two stacked panes on the right, all three shells inside the worktree.
 
@@ -76,7 +90,7 @@ The installer adds any of these that are missing (see [Install](#install)).
 | [tuicr](https://github.com/agavra/tuicr) | PR-style diff review and line comments (`Alt r`), and the review loop with Claude Code |
 | [GitHub CLI](https://cli.github.com) (`gh`) | GitHub access for tuicr and gh-dash, and `wts pr:<n>` |
 | [gh-dash](https://github.com/dlvhdr/gh-dash) | Pull request dashboard in the `Alt d` pane |
-| [fzf](https://github.com/junegunn/fzf) | The file picker in `Alt m` |
+| [fzf](https://github.com/junegunn/fzf) | The hub's picker, and the file picker in `Alt m` |
 | [glow](https://github.com/charmbracelet/glow) | Rendering markdown in the terminal |
 | [termaid](https://github.com/fasouto/termaid) | Drawing Mermaid diagrams as text |
 | [moor](https://github.com/walles/moor) | The pager for rendered markdown |
@@ -162,10 +176,17 @@ Set these before the workflow block in `~/.zshrc`, or in the environment:
 | --- | --- | --- |
 | `WORKFLOW_SESSION` | `main` | Name of the session terminals attach to |
 | `WORKFLOW_NO_ZELLIJ` | unset | Set to anything to skip auto-attach for that shell |
+| `WORKFLOW_ROOT` | `$HOME/workspace` | Where the hub looks for projects; colon-separated for several |
+| `WORKFLOW_NO_HUB` | unset | Set to anything to keep the control tab a plain shell |
 | `WTS_LAYOUT` | `worktree` | Layout name (in `config/zellij/layouts`) or path used for new tabs |
 
 Auto-attach is also skipped inside zellij, in shells without a real terminal, and in the
 embedded terminals of Zed, VS Code, JetBrains and Emacs.
+
+The hub lists the git repositories directly under `WORKFLOW_ROOT`; a directory whose `.git` is
+a file is a linked worktree and appears under its project instead. Worktrees themselves are
+found through worktrunk, so they can live anywhere. The hub starts in zellij's pane 0, which
+is the control tab's pane in a new session and in a resurrected one.
 
 Two repos with the same branch name do not share a tab: the second one is named
 `<repo>:<branch>`.
@@ -182,7 +203,8 @@ Nothing here is tied to one person's machine. The parts most worth changing:
   your own lazygit config.
 - `config/zellij/config.kdl`: the lazygit and markdown keys, themes, any other zellij option. Note that
   zellij's own settings UI writes to this file too, since `~/.config/zellij` links here.
-- `shell/workflow.zsh`: session name, when auto-attach is skipped.
+- `shell/workflow.zsh`: session name, when auto-attach is skipped, where the hub starts.
+- `bin/wt-hub`: the hub's columns, preview and keys.
 
 Edits take effect without re-running the installer, because everything is symlinked.
 
@@ -196,7 +218,8 @@ Edits take effect without re-running the installer, because everything is symlin
 install.sh, uninstall.sh, lib.sh   installer, its reverse, shared helpers
 config/zellij/config.kdl           overrides only; zellij merges it over its defaults
 config/zellij/layouts/             control.kdl (session), worktree.kdl (per-branch tab)
-shell/workflow.zsh                 auto-attach, wts and its completion, review alias
+shell/workflow.zsh                 auto-attach, hub in the control tab, wts and its completion
+bin/wt-hub                         the hub: projects and worktrees in an fzf picker
 bin/wts-open-tab                   finds or creates the tab; called by wts via `wt switch -x`
 bin/wts-tab-ids                    which tabs belong to which worktrees; used by wts remove
 bin/wt-review                      builds the diff pairs and hands them to Zed

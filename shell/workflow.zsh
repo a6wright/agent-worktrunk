@@ -1,8 +1,8 @@
-# Worktree workflow: zellij auto-attach, `wts`, and `review`.
+# Worktree workflow: zellij auto-attach, `wts`, `hub` and `review`.
 # Sourced from the end of ~/.zshrc by install.sh.
 
-# Installed commands (wt-review, wts-open-tab) live here. Already on PATH on most
-# Linux setups; stock macOS needs it added.
+# Installed commands (wt-hub, wt-review, wts-open-tab, ...) live here. Already
+# on PATH on most Linux setups; stock macOS needs it added.
 if [[ -d $HOME/.local/bin ]] && (( ! ${path[(Ie)$HOME/.local/bin]} )); then
     path=("$HOME/.local/bin" $path)
 fi
@@ -110,6 +110,18 @@ _wts() {
     _wt_lazy_complete "$@"
 }
 (( $+functions[compdef] )) && compdef _wts wts
+
+# --- hub: every project and worktree on one screen ---------------------------
+#
+# The control tab's pane is the first one zellij creates, pane 0, whether the
+# session is new or resurrected after a reboot. Its shell starts in the hub;
+# quitting the hub leaves the shell, and `hub` brings it back. Every other pane
+# is a plain shell. WORKFLOW_NO_HUB turns this off.
+alias hub=wt-hub
+if [[ -o interactive && -t 0 && -t 1 && -n $ZELLIJ && $ZELLIJ_PANE_ID == 0 \
+      && -z $WORKFLOW_NO_HUB ]] && (( $+commands[wt-hub] )); then
+    wt-hub
+fi
 
 # --- review: branch diff in Zed ----------------------------------------------
 alias review=wt-review

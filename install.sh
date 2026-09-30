@@ -389,6 +389,7 @@ if ((DRY_RUN)); then
 else
     cat <<EOF
   Open a new terminal to land in the "$SESSION_HINT" zellij session.
+    hub            every project and worktree; the control tab starts in it
     wts <branch>   open a worktree in its own tab (tab-completes)
     wts remove     remove a worktree and close its tab
     Alt g          lazygit in a floating pane (one per tab; Esc closes it)

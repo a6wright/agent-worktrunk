@@ -7,6 +7,9 @@ default_layout "control"
 // Sessions are saved to disk so `zellij attach -c main` can resurrect them after a reboot.
 // This is zellij's default; stated so the workflow does not silently depend on it.
 session_serialization true
+// zellij writes the saved layout once a minute by default, so a tab opened just
+// before a crash or reboot would be lost. Seconds.
+serialization_interval 5
 
 show_startup_tips false
 show_release_notes false

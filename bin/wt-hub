@@ -1,0 +1,202 @@
+#!/usr/bin/env bash
+# Everything you are working on, on one screen: each git project under
+# ~/workspace with its worktrees, whether a tab is open for it, how far it has
+# drifted, and its last commit. Pick one to open (or jump to) its tab.
+#
+# Usage: wt-hub [--list]
+#
+#   --list   print the table and exit, no picker
+#
+# In the picker:
+#   enter    open the worktree's tab, or jump to it if it is already open
+#   ctrl-x   new worktree in the highlighted project (asks for the branch)
+#   ctrl-r   refresh
+#   esc      quit
+#
+# Projects are the git repositories directly under WORKFLOW_ROOT (default
+# ~/workspace; colon-separated for several). Their worktrees are found through
+# worktrunk, so those can live anywhere.
+set -euo pipefail
+
+die() {
+    echo "wt-hub: $*" >&2
+    exit 1
+}
+
+# --- rows -------------------------------------------------------------------------
+# One tab-separated line per worktree, plus a header line first:
+#   kind (wt|none)  path  branch  project-path  display
+# fzf shows only the last field; the others are what an action needs.
+
+# shellcheck disable=SC2016  # jq program, $vars are jq's
+fmt='
+def pad(n):  tostring | . + ([range(n - length)] | map(" ") | join(""));
+def rpad(n): tostring | ([range(n - length)] | map(" ") | join("")) + .;
+def dim:   "[2m\(.)[22m";
+def bold:  "[1m\(.)[22m";
+def green: "[32m\(.)[39m";
+def yellow: "[33m\(.)[39m";
+def red:   "[31m\(.)[39m";
+def age:
+    if . == null then "" else
+        (now - fromdateiso8601) as $s
+        | if   $s < 3600            then "\($s / 60 | floor)m"
+          elif $s < 86400           then "\($s / 3600 | floor)h"
+          elif $s < 86400 * 14      then "\($s / 86400 | floor)d"
+          elif $s < 86400 * 365     then "\($s / 604800 | floor)w"
+          else                           "\($s / 31536000 | floor)y" end
+    end;
+def status:
+    (.worktree.changes // {}) as $c
+    | [ (if ($c.diff.added // 0) + ($c.diff.deleted // 0) > 0
+           then "+\($c.diff.added) -\($c.diff.deleted)"
+         elif ($c.staged or $c.modified or $c.deleted or $c.renamed) then "*"
+         else empty end),
+        (if $c.untracked then "?" else empty end),
+        (if $c.conflicted then "conflict" else empty end),
+        (if (.upstream.ahead // 0) > 0 then "↑\(.upstream.ahead)" else empty end),
+        (if (.upstream.behind // 0) > 0 then "↓\(.upstream.behind)" else empty end)
+      ] | join(" ");
+
+# Directories the terminal panes are sitting in right now.
+($panes[0] // [] | map(select(.is_plugin | not) | .pane_cwd // empty)) as $cwds
+| def open($p): any($cwds[]; . == $p or startswith($p + "/"));
+
+[ sort_by(.project | ascii_downcase)[]
+  | .project as $project
+  | ($project | split("/") | last) as $name
+  | (.items | sort_by((.worktree.main | not), .branch)) as $items
+  | if ($items | length) == 0 then
+        { kind: "none", path: $project, branch: "-", project: $project,
+          name: $name, open: false, age: "", status: "", subject: "no worktrees" }
+    else
+        $items | to_entries[] | .value as $it
+        | { kind: "wt", path: $it.worktree.path,
+            branch: ($it.branch // "(\($it.head.short_sha // "detached"))"),
+            project: $project,
+            name: (if .key == 0 then $name else "" end),
+            open: open($it.worktree.path),
+            age: ($it.head.committed_at | age),
+            status: ($it | status),
+            subject: ($it.head.subject // "") }
+    end
+]
+| ([7] + map(.name   | length) | max) as $wn
+| ([6] + map(.branch | length) | max) as $wb
+| ([6] + map(.status | length) | max) as $ws
+| ( ["", "", "", "",
+      (("PROJECT" | pad($wn)) + "  " + ("BRANCH" | pad($wb)) + "     " + ("AGE" | rpad(3))
+       + "  " + ("STATUS" | pad($ws)) + "  LAST COMMIT" | dim)]
+  , (.[] | [ .kind, .path, .branch, .project,
+      (.name | pad($wn) | bold) + "  "
+      + (.branch | pad($wb)) + "  "
+      + (if .open then ("●" | green) else " " end) + "  "
+      + (.age | rpad(3) | dim) + "  "
+      + (.status | pad($ws) | if test("conflict") then red elif . != "" then yellow else . end) + "  "
+      + (.subject[:60] | dim) ]))
+| @tsv
+'
+
+rows() {
+    local tmp root d i=0
+    tmp=$(mktemp -d)
+    IFS=: read -r -a roots <<<"${WORKFLOW_ROOT:-$HOME/workspace}"
+    for root in "${roots[@]}"; do
+        for d in "${root%/}"/*/; do
+            d=${d%/}
+            # A .git *file* marks a linked worktree; it shows up under its project.
+            [[ -d $d/.git ]] || continue
+            i=$((i + 1))
+            (
+                cd "$d" && { wt list --format json 2>/dev/null || echo '{}'; } |
+                    jq --arg project "$d" '{project: $project, items: (.items // [])}'
+            ) >"$tmp/$i.json" 2>/dev/null &
+        done
+    done
+    wait
+    if ((i == 0)); then
+        rm -rf "$tmp"
+        die "no git projects under ${WORKFLOW_ROOT:-$HOME/workspace} (set WORKFLOW_ROOT)"
+    fi
+    if [[ -n ${ZELLIJ:-} ]]; then
+        zellij action list-panes --tab --command --json >"$tmp/panes.json" 2>/dev/null || echo '[]' >"$tmp/panes.json"
+    else
+        echo '[]' >"$tmp/panes.json"
+    fi
+    jq -r -s --slurpfile panes "$tmp/panes.json" "$fmt" "$tmp"/[0-9]*.json
+    rm -rf "$tmp"
+}
+
+preview() {
+    local p=$1
+    [[ -d $p ]] || { echo "missing: $p"; return 0; }
+    git -C "$p" -c color.status=always status --short --branch 2>&1 | head -30
+    echo
+    git -C "$p" log --color=always --oneline --decorate -15 2>&1
+}
+
+# --- picker -----------------------------------------------------------------------
+
+pause() {
+    echo
+    read -r -p "press enter to continue " </dev/tty || true
+}
+
+pick() {
+    rows | fzf --ansi --delimiter $'\t' --with-nth 5 --nth 4,5 \
+        --header-lines 1 --layout reverse --no-sort --cycle \
+        --prompt 'hub > ' --info inline-right \
+        --header 'enter open tab · ctrl-x new worktree · ctrl-r refresh · esc quit' \
+        --expect ctrl-x \
+        --bind "ctrl-r:reload('$0' --rows)" \
+        --preview "'$0' --preview {2}" --preview-window 'right,50%,border-left'
+}
+
+main() {
+    for t in fzf jq wt; do
+        command -v "$t" >/dev/null || die "$t not found on PATH"
+    done
+    [[ -n ${ZELLIJ:-} ]] || die "not inside a zellij session (use --list for the table)"
+
+    local out key sel kind path branch project name create
+    while out=$(pick); do
+        { IFS= read -r key; IFS= read -r sel; } <<<"$out"
+        [[ -n $sel ]] || continue
+        IFS=$'\t' read -r kind path branch project _ <<<"$sel"
+        case $key in
+            ctrl-x)
+                echo
+                read -r -e -p "new worktree in ${project##*/}, branch name: " name </dev/tty || continue
+                [[ -n $name ]] || continue
+                # Same rule as wts: --create only for a branch that exists nowhere yet.
+                create=()
+                if ! git -C "$project" show-ref --verify --quiet "refs/heads/$name" \
+                    && [[ -z $(git -C "$project" for-each-ref --count=1 "refs/remotes/*/$name") ]]; then
+                    create=(--create)
+                fi
+                (cd "$project" && wt switch ${create[@]+"${create[@]}"} "$name" --no-cd \
+                    -x wts-open-tab -- '{{ branch }}' '{{ worktree_path }}') || pause
+                ;;
+            *)
+                [[ $kind == wt ]] || continue
+                (cd "$path" && wts-open-tab "$branch" "$path") || pause
+                ;;
+        esac
+    done
+    echo "hub: run \`hub\` to bring this back"
+}
+
+case ${1:-} in
+    -h | --help)
+        sed -n '2,/^set -euo/{/^set -euo/d;s/^# \{0,1\}//;p;}' "$0"
+        exit 0
+        ;;
+    --list) rows | cut -f5 ;;
+    --rows) rows ;;
+    --preview) preview "${2:?path}" ;;
+    # `exit` inside the case: bash reads a script as it runs, so a `git pull`
+    # that rewrites this file while the hub sits in the control tab must not
+    # leave anything to read after main returns.
+    "") main; exit 0 ;;
+    *) die "unknown option: $1 (try --help)" ;;
+esac
