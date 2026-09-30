@@ -8,8 +8,12 @@
 #   --list   print the table and exit, no picker
 #
 # In the picker:
+#   type     filter by project, branch or last commit
 #   enter    open the worktree's tab, or jump to it if it is already open
-#   ctrl-x   new worktree in the highlighted project (asks for the branch)
+#   space    new worktree in the highlighted project (asks for the branch)
+#   ctrl-x   same as space
+#   tab      the highlighted project's branches, local and remote, newest first;
+#            pick one to open a worktree for it (for reviewing someone's work)
 #   ctrl-r   refresh
 #   esc      quit
 #
@@ -135,6 +139,99 @@ preview() {
     git -C "$p" log --color=always --oneline --decorate -15 2>&1
 }
 
+# --- branches ---------------------------------------------------------------------
+# One tab-separated line per branch of a project, plus a header line first:
+#   name  ref  display
+# `name` is what `wt switch` takes; `ref` is what git log takes (origin/x for a
+# branch that only exists on the remote). A remote branch with a local
+# counterpart is folded into it. Fetches first so a colleague's new branch shows
+# up, but does not wait long for it.
+
+branch_rows() {
+    local p=$1
+    [[ -d $p ]] || die "missing: $p"
+    if command -v timeout >/dev/null; then
+        timeout 8 git -C "$p" fetch --quiet --prune --all 2>/dev/null || true
+    else
+        git -C "$p" fetch --quiet --prune --all 2>/dev/null || true
+    fi
+    git -C "$p" for-each-ref --sort=-committerdate \
+        --format='%(refname:short)%09%(refname)%09%(committerdate:unix)%09%(authorname)%09%(subject)%09%(worktreepath)' \
+        refs/heads refs/remotes |
+        awk -F '\t' -v now="$(date +%s)" -v project="$p" '
+            function age(t,  s) {
+                if (t == "") return ""
+                s = now - t
+                if (s < 3600)         return int(s / 60) "m"
+                if (s < 86400)        return int(s / 3600) "h"
+                if (s < 86400 * 14)   return int(s / 86400) "d"
+                if (s < 86400 * 365)  return int(s / 604800) "w"
+                return int(s / 31536000) "y"
+            }
+            function pad(str, n) { return sprintf("%-" n "s", str) }
+            function max(a, b) { return a > b ? a : b }
+            {
+                short = $1; ref = $2
+                if (ref ~ /^refs\/heads\//) {
+                    name = short; local[name] = 1
+                    where = ($6 == "") ? "" : ($6 == project ? "main" : "wt")
+                    wtpath[name] = $6
+                } else {
+                    if (ref ~ /\/HEAD$/) next
+                    name = short; sub(/^[^\/]+\//, "", name)
+                    if (name in local || name in remote) next
+                    remote[name] = 1
+                    where = substr(short, 1, index(short, "/") - 1)
+                }
+                n++
+                N[n] = name; R[n] = short; W[n] = where; A[n] = age($3); U[n] = $4; S[n] = $5
+                wn = max(wn, length(name)); ww = max(ww, length(where)); wu = max(wu, length($4))
+            }
+            END {
+                wn = max(wn, 6); ww = max(ww, 5); wu = max(wu, 6)
+                printf "\t\t\033[2m%s  %s  AGE  %s  LAST COMMIT\033[22m\n", pad("BRANCH", wn), pad("WHERE", ww), pad("AUTHOR", wu)
+                for (i = 1; i <= n; i++) {
+                    w = W[i]
+                    if (w == "wt" || w == "main") w = "\033[32m" pad(w, ww) "\033[39m"
+                    else if (w == "")             w = pad(w, ww)
+                    else                          w = "\033[2m" pad(w, ww) "\033[22m"
+                    printf "%s\t%s\t\033[1m%s\033[22m  %s  \033[2m%3s\033[22m  %s  \033[2m%s\033[22m\n",
+                        N[i], R[i], pad(N[i], wn), w, A[i], pad(U[i], wu), substr(S[i], 1, 60)
+                }
+            }'
+}
+
+branch_preview() {
+    local p=$1 ref=$2
+    git -C "$p" log --color=always --oneline --decorate -20 "$ref" 2>&1
+}
+
+# Prints the chosen branch name, or nothing when the picker was dismissed.
+branch_pick() {
+    local p=$1
+    branch_rows "$p" | fzf --ansi --delimiter $'\t' --with-nth 3 --accept-nth 1 \
+        --header-lines 1 --layout reverse --no-sort --cycle \
+        --prompt "${p##*/} branches > " --info inline-right \
+        --header 'enter open worktree · ctrl-r fetch again · esc back' \
+        --bind "ctrl-r:reload('$0' --branch-rows '$p')" \
+        --preview "'$0' --branch-preview '$p' {2}" --preview-window 'right,50%,border-left'
+}
+
+# Open (creating if needed) a worktree for a branch of a project, in its own tab.
+# Same rule as wts: --create only for a plain branch name that exists nowhere
+# yet; shortcuts, pr:N refs, URLs and paths go through untouched.
+open_branch() {
+    local project=$1 name=$2 create=()
+    if [[ $name != -* && $name != [@^-] && $name != pr:* && $name != mr:* \
+          && $name != *://* && ! -d $name ]] \
+        && ! git -C "$project" show-ref --verify --quiet "refs/heads/$name" \
+        && [[ -z $(git -C "$project" for-each-ref --count=1 "refs/remotes/*/$name") ]]; then
+        create=(--create)
+    fi
+    (cd "$project" && wt switch ${create[@]+"${create[@]}"} "$name" --no-cd \
+        -x wts-open-tab -- '{{ branch }}' '{{ worktree_path }}')
+}
+
 # --- picker -----------------------------------------------------------------------
 
 pause() {
@@ -143,11 +240,11 @@ pause() {
 }
 
 pick() {
-    rows | fzf --ansi --delimiter $'\t' --with-nth 5 --nth 4,5 \
+    rows | fzf --ansi --delimiter $'\t' --with-nth 5 \
         --header-lines 1 --layout reverse --no-sort --cycle \
         --prompt 'hub > ' --info inline-right \
-        --header 'enter open tab · ctrl-x new worktree · ctrl-r refresh · esc quit' \
-        --expect ctrl-x \
+        --header 'enter open tab · space new worktree · tab branches · ctrl-r refresh · esc quit' \
+        --expect ctrl-x,space,tab \
         --bind "ctrl-r:reload('$0' --rows)" \
         --preview "'$0' --preview {2}" --preview-window 'right,50%,border-left'
 }
@@ -158,24 +255,22 @@ main() {
     done
     [[ -n ${ZELLIJ:-} ]] || die "not inside a zellij session (use --list for the table)"
 
-    local out key sel kind path branch project name create
+    local out key sel kind path branch project name
     while out=$(pick); do
         { IFS= read -r key; IFS= read -r sel; } <<<"$out"
         [[ -n $sel ]] || continue
         IFS=$'\t' read -r kind path branch project _ <<<"$sel"
         case $key in
-            ctrl-x)
+            ctrl-x | space)
                 echo
                 read -r -e -p "new worktree in ${project##*/}, branch name: " name </dev/tty || continue
                 [[ -n $name ]] || continue
-                # Same rule as wts: --create only for a branch that exists nowhere yet.
-                create=()
-                if ! git -C "$project" show-ref --verify --quiet "refs/heads/$name" \
-                    && [[ -z $(git -C "$project" for-each-ref --count=1 "refs/remotes/*/$name") ]]; then
-                    create=(--create)
-                fi
-                (cd "$project" && wt switch ${create[@]+"${create[@]}"} "$name" --no-cd \
-                    -x wts-open-tab -- '{{ branch }}' '{{ worktree_path }}') || pause
+                open_branch "$project" "$name" || pause
+                ;;
+            tab)
+                name=$(branch_pick "$project") || continue
+                [[ -n $name ]] || continue
+                open_branch "$project" "$name" || pause
                 ;;
             *)
                 [[ $kind == wt ]] || continue
@@ -194,6 +289,8 @@ case ${1:-} in
     --list) rows | cut -f5 ;;
     --rows) rows ;;
     --preview) preview "${2:?path}" ;;
+    --branch-rows) branch_rows "${2:?project}" ;;
+    --branch-preview) branch_preview "${2:?project}" "${3:?ref}" ;;
     # `exit` inside the case: bash reads a script as it runs, so a `git pull`
     # that rewrites this file while the hub sits in the control tab must not
     # leave anything to read after main returns.

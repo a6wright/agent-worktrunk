@@ -27,10 +27,12 @@ a new app, with an installer so it can be rebuilt on any machine.
                     main         ●   31w  *           Merge pull request #1 from a6wright
   ```
 
-  `enter` opens the worktree's tab (or jumps to it), `ctrl-x` starts a new worktree in the
-  highlighted project, `ctrl-r` refreshes, `esc` leaves you at a shell in the same pane;
-  `hub` brings it back from anywhere. The right-hand side previews `git status` and the log.
-  `hub --list` prints the table without the picker.
+  Typing filters. `enter` opens the worktree's tab (or jumps to it), `space` (or `ctrl-x`)
+  starts a new worktree in the highlighted project, `tab` lists that project's branches,
+  local and remote, to open a worktree for one (handy for reviewing a colleague's branch),
+  `ctrl-r` refreshes, `esc` leaves you at a shell in the same pane; `hub` brings it back
+  from anywhere. The right-hand side previews `git status` and the log. `hub --list` prints
+  the table without the picker.
 - **`wts <branch>`** opens a worktree in its own tab, named after the branch: a full-height
   pane on the left, two stacked panes on the right, all three shells inside the worktree.
 
