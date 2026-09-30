@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# The workflow's keys, in the style of zellij's own status bar.
+#
+# Usage: wt-keys [--print | popup]
+#
+#   (none)    one line, `Alt + <g> lazygit <m> markdown ...`, redrawn on resize,
+#             up until `q`. The worktree tab layout has a one-line pane named
+#             "keys" for it; shell/workflow.zsh starts it there.
+#   --print   print that line once and exit
+#   popup     the full list of commands, until `q` or Esc. Alt h opens this in
+#             a floating pane (config/zellij/config.kdl), Alt h again closes it.
+set -euo pipefail
+
+# Zellij's status bar: a dark bar right across, each hint in a lighter box with
+# its key in bold green. 256-colour greys; the bar fills the line (\e[K erases
+# with the current background).
+BAR=$'\e[48;5;236m'
+BOX=$'\e[48;5;239m'
+RESET=$'\e[0m'
+key()  { printf '\e[1;32m<%s>\e[22;39m' "$1"; }
+head_() { printf '\e[1m%s\e[0m' "$1"; }
+# box <key> <label>: one hint, boxed, with a sliver of bar on each side.
+box() { printf '%s %s%s %s %s' "$BAR" "$BOX" "$(key "$1")" "$2" "$BAR"; }
+
+bar() {
+    printf '%s Alt +%s%s%s%s%s\e[K%s' "$BAR" \
+        "$(box g lazygit)" "$(box m markdown)" "$(box r review)" "$(box d 'github pr')" "$(box h help)" \
+        "$RESET"
+}
+
+popup_text() {
+    printf '%s Alt +%s%s%s%s%s\e[K%s\n' "$BAR" \
+        "$(box g lazygit)" "$(box m 'markdown docs')" "$(box r 'review (tuicr)')" "$(box d 'github PRs')" "$(box h 'this help')" \
+        "$RESET"
+    printf '        floating panes over the tab, in its directory; the same key again closes one\n\n'
+    printf '  %s\n' "$(head_ shell)"
+    printf '    %-22s %s\n' \
+        'wts <branch>'   'worktree in its own tab; the branch is created if it exists nowhere' \
+        'wts remove [b]' 'remove worktrees and close their tabs' \
+        'hub'            'every project and worktree; the bottom of the control tab' \
+        'review [ref]'   'the branch diff in Zed, committed or not' \
+        'wt-md [file]'   'render markdown, Mermaid drawn as text'
+    printf '\n  %s\n' "$(head_ hub)"
+    printf '    %-22s %s\n' \
+        'type'   'filter by project, branch or last commit' \
+        'enter'  'open the worktree'"'"'s tab, or jump to it' \
+        'space'  'new worktree in the highlighted project' \
+        'tab'    'that project'"'"'s branches, local and remote; pick one for a worktree' \
+        'ctrl-r' 'refresh' \
+        'esc'    'leave the hub for a shell; hub brings it back'
+    printf '\n  %s\n' "$(head_ zellij)"
+    printf '    %-22s %s\n' \
+        'Ctrl t / Ctrl p'   'tab / pane mode: arrows move, n new, x close, r rename' \
+        'Ctrl s'            'scroll' \
+        'Ctrl o'            'session manager' \
+        'Ctrl g'            'lock: every key goes to the program' \
+        'Alt + arrows'      'focus another pane'
+    printf '\n  %s or %s closes this\n' "$(key q)$RESET" "$(key esc)$RESET"
+}
+
+draw() {
+    printf '\e[H\e[2J'
+    "$1"
+}
+
+# Stay up, redrawing on resize, until one of the given keys.
+hold() {
+    local what=$1 k
+    shift
+    trap 'printf "\e[?25h\e[H\e[2J"' EXIT
+    # shellcheck disable=SC2064  # $what is meant to expand now
+    trap "draw $what" WINCH
+    trap '' INT
+    printf '\e[?25l'
+    draw "$what"
+    while :; do
+        # A signal interrupts read (status > 128) once the WINCH trap has redrawn.
+        read -rsn1 k </dev/tty || { (($? > 128)) && continue; return 0; }
+        for want in "$@"; do [[ $k == "$want" ]] && return 0; done
+    done
+}
+
+case ${1:-} in
+    -h | --help)
+        sed -n '2,/^set -euo/{/^set -euo/d;s/^# \{0,1\}//;p;}' "$0"
+        exit 0
+        ;;
+    --print) bar; echo ;;
+    "") hold bar q ;;
+    popup)
+        if [[ -n ${ZELLIJ:-} && -n ${ZELLIJ_PANE_ID:-} ]]; then
+            zellij action change-floating-pane-coordinates --pane-id "terminal_$ZELLIJ_PANE_ID" \
+                --x 10% --y 15% --width 80% --height 70% 2>/dev/null || true
+        fi
+        hold popup_text q $'\e'
+        ;;
+    *)
+        echo "wt-keys: unknown option: $1 (try --help)" >&2
+        exit 1
+        ;;
+esac

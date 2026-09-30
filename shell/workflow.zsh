@@ -111,24 +111,28 @@ _wts() {
 }
 (( $+functions[compdef] )) && compdef _wts wts
 
-# --- hub: every project and worktree on one screen ---------------------------
+# --- hub and keys: panes that start in a program --------------------------------
 #
-# The control tab is a shell on top of the hub (layouts/control.kdl). The pane
-# named "hub" there starts its shell in the hub, in a new session and in one
-# resurrected after a reboot, since pane names are saved with the layout.
-# Quitting the hub leaves the shell, and `hub` brings it back. Every other pane
-# is a plain shell. WORKFLOW_NO_HUB turns this off.
+# The control tab is a shell on top of the hub (layouts/control.kdl), and a
+# worktree tab has a short cheat-sheet pane at the bottom right
+# (layouts/worktree.kdl). Those panes are named "hub" and "keys", and a shell
+# starting in a pane with one of those names runs the program, in a new session
+# and in one resurrected after a reboot, since pane names are saved with the
+# layout. Quitting the program leaves the shell; `hub` and `wt-keys` bring them
+# back. Every other pane is a plain shell. WORKFLOW_NO_HUB turns this off.
 alias hub=wt-hub
-_workflow_in_hub_pane() {
+_workflow_pane_name() {
     [[ $ZELLIJ_PANE_ID == <-> ]] || return 1
     zellij action list-panes --json 2>/dev/null |
-        jq -e --argjson id "$ZELLIJ_PANE_ID" \
-            'any(.[]; type == "object" and (.is_plugin | not) and .id == $id and .title == "hub")' \
-            >/dev/null
+        jq -r --argjson id "$ZELLIJ_PANE_ID" \
+            'first(.[] | select(type == "object" and (.is_plugin | not) and .id == $id)) | .title // empty'
 }
 if [[ -o interactive && -t 0 && -t 1 && -n $ZELLIJ && -z $WORKFLOW_NO_HUB ]] \
-    && (( $+commands[wt-hub] && $+commands[jq] )) && _workflow_in_hub_pane; then
-    wt-hub
+    && (( $+commands[jq] )); then
+    case $(_workflow_pane_name) in
+        hub)  (( $+commands[wt-hub] )) && wt-hub ;;
+        keys) (( $+commands[wt-keys] )) && wt-keys ;;
+    esac
 fi
 
 # --- review: branch diff in Zed ----------------------------------------------
@@ -150,4 +154,19 @@ if [[ -o interactive && -t 0 && -t 1 \
       && $TERMINAL_EMULATOR != JetBrains* ]] \
    && (( $+commands[zellij] )); then
     zellij attach --create "$WORKFLOW_SESSION"
+    # `wt-update` restarts the session: it leaves this marker, kills the
+    # session, builds a new one and reopens the tabs, then removes the marker.
+    # Wait for that and rejoin instead of leaving this terminal at a shell.
+    _workflow_marker=${XDG_STATE_HOME:-$HOME/.local/state}/agent-worktrunk/restarting
+    if [[ -e $_workflow_marker ]]; then
+        print -n "update: zellij is restarting"
+        for _ in {1..120}; do
+            [[ -e $_workflow_marker ]] || break
+            print -n .
+            sleep 0.5
+        done
+        print
+        [[ -e $_workflow_marker ]] || zellij attach --create "$WORKFLOW_SESSION"
+    fi
+    unset _workflow_marker
 fi

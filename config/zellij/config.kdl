@@ -47,5 +47,12 @@ keybinds {
                 close_on_exit true
             }
         }
+        // Every command of the workflow, and the zellij keys that matter.
+        bind "Alt h" {
+            Run "wt-float" "wt-keys" "popup" {
+                floating true
+                close_on_exit true
+            }
+        }
     }
 }

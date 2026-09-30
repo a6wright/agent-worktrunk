@@ -19,6 +19,7 @@ a new app, with an installer so it can be rebuilt on any machine.
 - **The first tab, `control`, is a shell on top of the hub.** The shell has focus, for
   ordinary terminal work. The hub below it shows every git project under `~/workspace` with
   its worktrees, whether a tab is open for each, how far it has drifted, and its last commit.
+  Plain folders there are listed too; enter opens a tab in one.
 
   ```
   PROJECT           BRANCH           AGE  STATUS      LAST COMMIT
@@ -34,13 +35,16 @@ a new app, with an installer so it can be rebuilt on any machine.
   from anywhere. The right-hand side previews `git status` and the log. `hub --list` prints
   the table without the picker.
 - **`wts <branch>`** opens a worktree in its own tab, named after the branch: a full-height
-  pane on the left, two stacked panes on the right, all three shells inside the worktree.
+  pane on the left, two stacked panes on the right, all three shells inside the worktree,
+  and under those a one-line strip of the `Alt` keys in the style of zellij's status bar.
 
   ```
   ┌──────────────┬──────────────┐
   │              │              │
   │              ├──────────────┤
   │              │              │
+  │              ├──────────────┤
+  │              │Alt + <g> <m> │
   └──────────────┴──────────────┘
   ```
 
@@ -69,6 +73,8 @@ a new app, with an installer so it can be rebuilt on any machine.
   (or `Alt r`) closes it.
 - **`Alt d`** opens [gh-dash](https://github.com/dlvhdr/gh-dash): your pull requests and
   the ones waiting on your review. `T` on a PR reviews it in tuicr, Esc closes it.
+- **`Alt h`** opens a floating help page with every command above, the hub's keys and
+  the zellij keys that matter. `q`, Esc or `Alt h` closes it.
 - **Review loop with Claude Code.** The installer adds tuicr's own skill to
   `~/.claude/skills/tuicr`. Ask Claude to let you review its changes (or run `/tuicr`)
   and it opens tuicr beside the chat; comment, quit with `q`, and Claude reads the
@@ -78,6 +84,21 @@ a new app, with an installer so it can be rebuilt on any machine.
 - **`review`** opens Zed with one multi-file diff of everything the branch changed since it
   forked from the default branch, committed or not. `review <ref>` compares against
   something else. The right-hand side is the live file, so edits land in the worktree.
+
+## Updating
+
+```
+cd ~/workspace/agent-worktrunk && ./update
+```
+
+It pulls the repo, runs the installer (which only does what is missing), and restarts the
+zellij session with the same tabs: worktree tabs come back through `wts`, so they get the
+current layout, and other tabs come back as plain tabs in the same directory. Terminals
+that were attached rejoin on their own. The restart stops everything running in the panes,
+agents included (`claude --resume` picks a conversation back up), so it asks first;
+`./update -y` skips the question and `./update --no-restart` skips the restart. `./update
+--dry-run` shows the commits, install steps and tabs without touching anything. `wt-update`
+is the same command from anywhere.
 
 ## Tools
 

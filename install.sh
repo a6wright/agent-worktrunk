@@ -397,6 +397,8 @@ else
     Alt r          review the branch in tuicr; comments reach Claude via /tuicr
     Alt d          GitHub PRs in gh-dash (T reviews one in tuicr)
     review         branch diff in Zed
+    Alt h          every key and command, in a floating pane
+  Update with ./update (pulls, installs, restarts the session with its tabs).
   Undo with ./uninstall.sh
 EOF
     ((GHOSTTY_CHANGED)) && echo "  Ghostty: reload its config (Cmd Shift ,) or restart it, so Alt g works."

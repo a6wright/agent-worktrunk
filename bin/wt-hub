@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Everything you are working on, on one screen: each git project under
 # ~/workspace with its worktrees, whether a tab is open for it, how far it has
-# drifted, and its last commit. Pick one to open (or jump to) its tab.
+# drifted, and its last commit; plain folders too. Pick one to open (or jump
+# to) its tab.
 #
 # Usage: wt-hub [--list]
 #
@@ -9,7 +10,7 @@
 #
 # In the picker:
 #   type     filter by project, branch or last commit
-#   enter    open the worktree's tab, or jump to it if it is already open
+#   enter    open the worktree's (or folder's) tab, or jump to it if it is open
 #   space    new worktree in the highlighted project (asks for the branch)
 #   ctrl-x   same as space
 #   tab      the highlighted project's branches, local and remote, newest first;
@@ -19,7 +20,8 @@
 #
 # Projects are the git repositories directly under WORKFLOW_ROOT (default
 # ~/workspace; colon-separated for several). Their worktrees are found through
-# worktrunk, so those can live anywhere.
+# worktrunk, so those can live anywhere. A folder there that is not a git
+# repository is listed as well; enter opens a tab in it.
 set -euo pipefail
 
 die() {
@@ -29,7 +31,7 @@ die() {
 
 # --- rows -------------------------------------------------------------------------
 # One tab-separated line per worktree, plus a header line first:
-#   kind (wt|none)  path  branch  project-path  display
+#   kind (wt|none|dir)  path  branch  project-path  display
 # fzf shows only the last field; the others are what an action needs.
 
 # shellcheck disable=SC2016  # jq program, $vars are jq's
@@ -70,7 +72,10 @@ def status:
   | .project as $project
   | ($project | split("/") | last) as $name
   | (.items | sort_by((.worktree.main | not), .branch)) as $items
-  | if ($items | length) == 0 then
+  | if .dir then
+        { kind: "dir", path: $project, branch: "", project: $project,
+          name: $name, open: open($project), age: "", status: "", subject: "folder" }
+    elif ($items | length) == 0 then
         { kind: "none", path: $project, branch: "-", project: $project,
           name: $name, open: false, age: "", status: "", subject: "no worktrees" }
     else
@@ -108,19 +113,24 @@ rows() {
     for root in "${roots[@]}"; do
         for d in "${root%/}"/*/; do
             d=${d%/}
-            # A .git *file* marks a linked worktree; it shows up under its project.
-            [[ -d $d/.git ]] || continue
             i=$((i + 1))
-            (
-                cd "$d" && { wt list --format json 2>/dev/null || echo '{}'; } |
-                    jq --arg project "$d" '{project: $project, items: (.items // [])}'
-            ) >"$tmp/$i.json" 2>/dev/null &
+            # A .git *file* marks a linked worktree; it shows up under its project.
+            if [[ -f $d/.git ]]; then
+                i=$((i - 1))
+            elif [[ -d $d/.git ]]; then
+                (
+                    cd "$d" && { wt list --format json 2>/dev/null || echo '{}'; } |
+                        jq --arg project "$d" '{project: $project, items: (.items // [])}'
+                ) >"$tmp/$i.json" 2>/dev/null &
+            else
+                jq -n --arg project "$d" '{project: $project, items: [], dir: true}' >"$tmp/$i.json"
+            fi
         done
     done
     wait
     if ((i == 0)); then
         rm -rf "$tmp"
-        die "no git projects under ${WORKFLOW_ROOT:-$HOME/workspace} (set WORKFLOW_ROOT)"
+        die "nothing under ${WORKFLOW_ROOT:-$HOME/workspace} (set WORKFLOW_ROOT)"
     fi
     if [[ -n ${ZELLIJ:-} ]]; then
         zellij action list-panes --tab --command --json >"$tmp/panes.json" 2>/dev/null || echo '[]' >"$tmp/panes.json"
@@ -134,6 +144,11 @@ rows() {
 preview() {
     local p=$1
     [[ -d $p ]] || { echo "missing: $p"; return 0; }
+    if ! git -C "$p" rev-parse --git-dir >/dev/null 2>&1; then
+        # shellcheck disable=SC2012  # a listing for the eye, not for parsing
+        ls -Ap1 "$p" | head -40
+        return 0
+    fi
     git -C "$p" -c color.status=always status --short --branch 2>&1 | head -30
     echo
     git -C "$p" log --color=always --oneline --decorate -15 2>&1
@@ -217,6 +232,25 @@ branch_pick() {
         --preview "'$0' --branch-preview '$p' {2}" --preview-window 'right,50%,border-left'
 }
 
+# A tab for a plain folder, named after it, with the worktree layout (shells in
+# the folder plus the key strip). Jumps to the tab if one is open in it.
+open_dir() {
+    local p=$1 name=${1##*/} layout
+    if zellij action query-tab-names | grep -Fxq -- "$name" \
+        && zellij action list-panes --tab --json | jq -e --arg tab "$name" --arg p "$p" '
+            any(.[]; (.is_plugin | not) and .tab_name == $tab
+                     and (.pane_cwd // "" | . == $p or startswith($p + "/")))' >/dev/null; then
+        zellij action go-to-tab-name "$name"
+        return
+    fi
+    layout=${WTS_LAYOUT:-worktree}
+    if [[ $layout != */* ]]; then
+        layout_file=${ZELLIJ_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/zellij}/layouts/$layout.kdl
+        [[ -f $layout_file ]] && layout=$layout_file
+    fi
+    zellij action new-tab --layout "$layout" --name "$name" --cwd "$p" >/dev/null
+}
+
 # Open (creating if needed) a worktree for a branch of a project, in its own tab.
 # Same rule as wts: --create only for a plain branch name that exists nowhere
 # yet; shortcuts, pr:N refs, URLs and paths go through untouched.
@@ -260,6 +294,12 @@ main() {
         { IFS= read -r key; IFS= read -r sel; } <<<"$out"
         [[ -n $sel ]] || continue
         IFS=$'\t' read -r kind path branch project _ <<<"$sel"
+        if [[ $kind == dir ]] && [[ $key == ctrl-x || $key == space || $key == tab ]]; then
+            echo
+            echo "${path##*/} is a folder, not a git repository: enter opens a tab in it"
+            pause
+            continue
+        fi
         case $key in
             ctrl-x | space)
                 echo
@@ -273,8 +313,10 @@ main() {
                 open_branch "$project" "$name" || pause
                 ;;
             *)
-                [[ $kind == wt ]] || continue
-                (cd "$path" && wts-open-tab "$branch" "$path") || pause
+                case $kind in
+                    wt) (cd "$path" && wts-open-tab "$branch" "$path") || pause ;;
+                    dir) open_dir "$path" || pause ;;
+                esac
                 ;;
         esac
     done

@@ -1,4 +1,6 @@
-// Tab layout for a worktree: full-height left pane, right side split top/bottom.
+// Tab layout for a worktree: full-height left pane, right side split top/bottom,
+// with a one-line pane named "keys" under those: shell/workflow.zsh sees the
+// name and shows the key strip (wt-keys) in it.
 // The tab name and cwd are supplied by `wts` via `zellij action new-tab --name/--cwd`.
 //
 // The bars are repeated here because `new-tab --layout` does not inherit the
@@ -12,6 +14,7 @@ layout {
         pane split_direction="horizontal" {
             pane
             pane
+            pane size=1 name="keys" borderless=true
         }
     }
     pane size=1 borderless=true {
