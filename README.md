@@ -92,9 +92,8 @@ cd ~/workspace/agent-worktrunk && ./update
 ```
 
 It pulls the repo, runs the installer (which only does what is missing), and restarts the
-zellij session with the same tabs: worktree tabs come back through `wts`, so they get the
-current layout, and other tabs come back as plain tabs in the same directory. Terminals
-that were attached rejoin on their own. The restart stops everything running in the panes,
+zellij session with the same tabs: every tab comes back under its name, in its directory,
+with the current worktree layout. Terminals that were attached rejoin on their own. The restart stops everything running in the panes,
 agents included (`claude --resume` picks a conversation back up), so it asks first;
 `./update -y` skips the question and `./update --no-restart` skips the restart. `./update
 --dry-run` shows the commits, install steps and tabs without touching anything. `wt-update`

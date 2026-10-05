@@ -12,12 +12,12 @@
 #
 # The restart kills the session, so everything running in its panes stops
 # (agents included; `claude --resume` gets a conversation back). It then creates
-# the session again from the current layouts and reopens every tab: worktree
-# tabs through wts-open-tab, other tabs as plain tabs in the same directory.
-# Terminals that were attached rejoin on their own (shell/workflow.zsh waits
-# for the marker this leaves in the state dir). Zellij reloads its config on
-# the fly, so a restart matters for a new zellij, a changed layout, or to give
-# open tabs the current layout.
+# the session again from a layout built on the spot: the control layout plus
+# one worktree-layout tab per tab that was open, in the same directory and
+# under the same name. Terminals that were attached rejoin on their own
+# (shell/workflow.zsh waits for the marker this leaves in the state dir).
+# Zellij reloads its config on the fly, so a restart matters for a new zellij,
+# a changed layout, or to give open tabs the current layout.
 set -euo pipefail
 
 # The repo, through the symlinks `~/.local/bin/wt-update` and `./update`.
@@ -35,6 +35,7 @@ SESSION=${WORKFLOW_SESSION:-main}
 PLAN=$STATE_DIR/tabs.tsv
 LOG=$STATE_DIR/update.log
 MARKER=$STATE_DIR/restarting
+LAYOUT=$STATE_DIR/restart-layout.kdl
 
 ASSUME_YES=0 RESTART=1 INSTALL_ARGS=()
 for arg in "$@"; do
@@ -96,11 +97,88 @@ show_plan() {
     done <"$1"
 }
 
+# --- the session layout ------------------------------------------------------------
+# The tabs go into the layout the new session is created from, not through
+# `zellij action new-tab` afterwards: a tab added to a session with no client
+# attached leaves it in a state no client can attach to (zellij 0.45), and at
+# that point nothing is attached, the old session having just been killed.
+layout_dir() { echo "${ZELLIJ_CONFIG_DIR:-$CONFIG_HOME/zellij}/layouts"; }
+
+# A layout file by name or path; the repo's copy when it is not installed.
+layout_file() {
+    local layout=$1 file
+    [[ $layout == */* ]] && { echo "$layout"; return; }
+    for file in "$(layout_dir)/$layout.kdl" "$REPO/config/zellij/layouts/$layout.kdl"; do
+        [[ -f $file ]] && { echo "$file"; return; }
+    done
+    return 1
+}
+
+# What is inside `layout { ... }`, comments dropped. With nobars=1 the tab-bar
+# and status-bar panes go too: the control layout's tab template supplies them
+# for every tab (layouts/worktree.kdl repeats them only for `new-tab --layout`).
+layout_body() {
+    awk -v nobars="${2:-0}" '
+        /^[[:space:]]*\/\// { next }
+        !opened && /^[[:space:]]*layout[[:space:]]*[{]/ { opened = 1; next }
+        nobars && /^[[:space:]]*pane size=1 borderless=true [{]/ { buf = $0; inpane = 1; next }
+        inpane {
+            buf = buf "\n" $0
+            if ($0 ~ /^[[:space:]]*[}]/) {
+                inpane = 0
+                if (buf !~ /plugin location="(tab-bar|status-bar|compact-bar)"/) lines[n++] = buf
+            }
+            next
+        }
+        { lines[n++] = $0 }
+        END {
+            while (n > 0 && lines[n-1] ~ /^[[:space:]]*$/) n--
+            if (n > 0 && lines[n-1] ~ /^[}][[:space:]]*$/) n--
+            for (i = 0; i < n; i++) print lines[i]
+        }' "$1"
+}
+
+kdl_string() { local s=${1//\\/\\\\}; printf '"%s"' "${s//\"/\\\"}"; }
+
+# The session's default layout, from zellij's config; "control" when unset.
+control_layout_name() {
+    local config=${ZELLIJ_CONFIG_FILE:-${ZELLIJ_CONFIG_DIR:-$CONFIG_HOME/zellij}/config.kdl} name
+    name=$(sed -n 's/^[[:space:]]*default_layout[[:space:]]*"\([^"]*\)".*/\1/p' "$config" 2>/dev/null | head -1)
+    echo "${name:-control}"
+}
+
+# The layout for the new session: the control layout as installed, then a tab
+# per line of the plan. Plain folders get the worktree layout too, as the hub
+# gives them.
+write_layout() {
+    local control worktree body pos name kind cwd branch
+    control=$(layout_file "$(control_layout_name)") || { echo "no control layout"; return 1; }
+    worktree=$(layout_file "${WTS_LAYOUT:-worktree}") || { echo "no worktree layout"; return 1; }
+    body=$(layout_body "$worktree" 1 | sed 's/^/    /')
+    {
+        echo "layout {"
+        layout_body "$control"
+        while IFS=$'\t' read -r pos name kind cwd branch; do
+            printf '    tab name=%s cwd=%s {\n' "$(kdl_string "$name")" "$(kdl_string "$cwd")"
+            echo "$body"
+            echo "    }"
+        done <"$PLAN"
+        echo "}"
+    } >"$LAYOUT"
+}
+
 # --- the worker: outlives the pane this ran from -------------------------------------
 worker() {
-    local pos name kind cwd branch active
+    local name active
     echo "== $(date) restarting $SESSION"
+    # Started from a pane of the session it restarts, so it inherits that
+    # session's variables; with them set, zellij refuses to attach to "itself".
+    unset ZELLIJ ZELLIJ_SESSION_NAME ZELLIJ_PANE_ID
+    # Whatever happens, the marker goes: terminals wait on it to rejoin.
+    trap 'rm -f "$MARKER"' EXIT
     touch "$MARKER"
+    write_layout || return 1
+    while IFS=$'\t' read -r _ name _; do echo "tab $name"; done <"$PLAN"
     active=$(z action current-tab-info --json 2>/dev/null | jq -r '.name // empty') || true
     zellij kill-session "$SESSION" || true
     for _ in $(seq 1 50); do
@@ -108,30 +186,14 @@ worker() {
         sleep 0.2
     done
     zellij delete-session --force "$SESSION" 2>/dev/null || true
-    zellij attach --create-background "$SESSION"
+    zellij attach --create-background "$SESSION" options --default-layout "$LAYOUT"
     for _ in $(seq 1 100); do
         [[ $(session_state) == running ]] && break
         sleep 0.2
     done
-    [[ $(session_state) == running ]] || { echo "session did not come up"; rm -f "$MARKER"; return 1; }
+    [[ $(session_state) == running ]] || { echo "session did not come up"; return 1; }
     sleep 1
-    # Plain folders get the worktree layout too, as the hub gives them.
-    local layout=${WTS_LAYOUT:-worktree} layout_file
-    if [[ $layout != */* ]]; then
-        layout_file=${ZELLIJ_CONFIG_DIR:-$CONFIG_HOME/zellij}/layouts/$layout.kdl
-        [[ -f $layout_file ]] && layout=$layout_file
-    fi
-    while IFS=$'\t' read -r pos name kind cwd branch; do
-        echo "tab $name"
-        if [[ $kind == wt ]]; then
-            ZELLIJ=0 ZELLIJ_SESSION_NAME=$SESSION wts-open-tab "$branch" "$cwd" ||
-                z action new-tab --layout "$layout" --name "$name" --cwd "$cwd" || true
-        else
-            z action new-tab --layout "$layout" --name "$name" --cwd "$cwd" || true
-        fi
-    done <"$PLAN"
     [[ -n $active ]] && z action go-to-tab-name "$active" 2>/dev/null || true
-    rm -f "$MARKER"
     echo "done"
 }
 

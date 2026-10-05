@@ -1,6 +1,18 @@
 # Worktree workflow: zellij auto-attach, `wts`, `hub` and `review`.
 # Sourced from the end of ~/.zshrc by install.sh.
 
+# Run from a copy of the whole file, not the file itself. zsh reads a sourced
+# file as it goes, and this one blocks for the life of the terminal (in zellij,
+# the hub, the key strip). If the file changes meanwhile, as `wt-update` does,
+# the shell would carry on reading the new file from where the old one left
+# off and stop with a parse error. This block is parsed whole, so after the
+# eval nothing more is read from disk.
+if [[ -z $_WORKFLOW_LOADED ]]; then
+    _WORKFLOW_LOADED=1 eval "$(<${(%):-%x})"
+    unset _WORKFLOW_LOADED
+    return
+fi
+
 # Installed commands (wt-hub, wt-review, wts-open-tab, ...) live here. Already
 # on PATH on most Linux setups; stock macOS needs it added.
 if [[ -d $HOME/.local/bin ]] && (( ! ${path[(Ie)$HOME/.local/bin]} )); then
